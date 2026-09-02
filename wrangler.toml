@@ -1,0 +1,34 @@
+name = "fintrack"
+main = "src/index.ts"
+compatibility_date = "2025-09-01"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+
+# PDF rendering is CPU-heavy; the free plan caps a request at 10ms CPU.
+# On the Workers Paid plan this raises the cap to 30s.
+[limits]
+cpu_ms = 30000
+
+[observability]
+enabled = true
+
+# Daily tick: month-start summary of the previous month + budget nudges.
+[triggers]
+crons = ["0 6 * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "fintrack"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+
+[[rules]]
+type = "Data"
+globs = ["**/*.ttf"]
+fallthrough = false
+
+[vars]
+DEFAULT_TZ = "Asia/Yerevan"
+CURRENCY = "AMD"
+CURRENCY_SIGN = "֏"
+# Comma-separated Telegram user ids allowed to use the bot. Empty = open to all.
+ALLOWED_USER_IDS = ""

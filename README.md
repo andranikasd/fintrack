@@ -166,7 +166,8 @@ append a date such as `/uncategorized 2026-09-15`.
 
 `/alias metro | Transport` teaches a category
 and updates matching imported items; category picks on imported rows also teach
-an alias. Commands and reports are used in the private bot chat.
+an alias. Add several spelling variations at once with `/alias chatgpt, cigarret,
+coffee | Personal`. Commands and reports are used in the private bot chat.
 
 The date heading accepts `Sep 15`, `September 15 2026`, `2026-09-15`, `15.09`,
 `today`, or `yesterday`. Without a heading, the original post date in your timezone

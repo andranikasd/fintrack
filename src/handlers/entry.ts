@@ -13,6 +13,35 @@ import type { TxWithCategory } from '../types';
 
 export const entry = new Composer<AppContext>();
 
+/** Telegram Markdown does not render pipe tables. Rich messages do, so channel
+ * rows created by /add use Telegram's native table block when available. */
+function richDailyTable(day: string, rows: Array<[string, string]>, total: number) {
+  const cell = (text: string, isHeader = false) => ({
+    text,
+    ...(isHeader ? { is_header: true as const } : {}),
+    align: 'left' as const,
+    valign: 'middle' as const,
+  });
+  return {
+    blocks: [
+      { type: 'paragraph' as const, text: day },
+      {
+        type: 'table' as const,
+        is_bordered: true as const,
+        is_striped: true as const,
+        cells: [
+          [
+            cell('Item', true),
+            cell('price', true),
+          ],
+          ...rows.map(([label, amount]) => [cell(label), cell(amount, false)]),
+        ],
+      },
+      { type: 'paragraph' as const, text: `Total: ${total}` },
+    ],
+  };
+}
+
 function accountKeyboard(accounts: Array<{id:number;name:string}>): InlineKeyboard {
   const kb = new InlineKeyboard();
   for (const account of accounts) kb.text(account.name, `addaccount:${account.id}`).row();
@@ -44,11 +73,15 @@ async function addToChannel(ctx: AppContext, parsed: {amount:number; rest:string
     lines.push(`${item}${suffix} | ${parsed.amount}`);
     const total = rows.expenses.reduce((sum,row)=>sum+row.amount,0) + parsed.amount;
     lines.push(`Total: ${total}`); text = lines.join('\n');
-    await ctx.api.editMessageText(post.chat_id, post.message_id, text);
+    const tableRows = lines.slice(2, -1).map(line => {
+      const divider = line.lastIndexOf(' | ');
+      return [line.slice(0, divider), line.slice(divider + 3)] as [string, string];
+    });
+    await ctx.api.editMessageText(post.chat_id, post.message_id, richDailyTable(parsed.spentOn, tableRows, total));
     await ctx.reply(`Added ${parsed.amount} ֏ ${item} to the ${parsed.spentOn} channel table.`);
   } else {
     text = `${parsed.spentOn}\nItem | price\n${item}${suffix} | ${parsed.amount}\nTotal: ${parsed.amount}`;
-    const sent = await ctx.api.sendMessage(linked.chat_id, text);
+    const sent = await ctx.api.sendRichMessage(linked.chat_id, richDailyTable(parsed.spentOn, [[`${item}${suffix}`, String(parsed.amount)]], parsed.amount));
     await ctx.reply(`Created the ${parsed.spentOn} channel table and added ${parsed.amount} ֏ ${item}.`);
     // The channel update will import the source row. This reminder helps when a
     // Telegram installation delays channel_post delivery briefly.

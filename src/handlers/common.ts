@@ -34,7 +34,7 @@ No category in the text? The bot asks with one tap.
 /funding shared 20000 — shared budget with a protected reserve
 /remind 20:00 /summary 21:00 — optional daily notifications
 /uncategorized — assign unknown items to existing or new categories
-/alias metro | Transport — remember an item category
+/alias chatgpt, cigarette, coffee | Personal — remember several item categories at once
 /syncstatus — posts needing correction
 /forgetpost CHANNEL_ID MESSAGE_ID — remove a deleted post's records
 

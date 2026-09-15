@@ -7,35 +7,49 @@ import { minorMoney, parseMinor, validDate } from '../lib/savings';
 export const goals = new Composer<AppContext>();
 export function goalText(p: GoalStatus, sign: string): string {
   const g = p.goal;
-  return `${g.name}\nSaved: ${minorMoney(g.saved_minor,sign)} / ${minorMoney(g.target_minor,sign)} (${Math.round(g.saved_minor/g.target_minor*1000)/10}%)\nRemaining: ${minorMoney(p.remaining,sign)}\n` +
+  return `🎯 ${g.name}\nSaved: ${minorMoney(g.saved_minor,sign)} / ${minorMoney(g.target_minor,sign)} (${Math.round(g.saved_minor/g.target_minor*1000)/10}%)\nRemaining: ${minorMoney(p.remaining,sign)}\n` +
+    `Plan: ${g.deadline ? `by ${g.deadline}` : `at ${minorMoney(g.daily_minor ?? 0,sign)} per day`}${g.cap_minor !== null ? ` · cap ${minorMoney(g.cap_minor,sign)}` : ''}\n` +
     (p.remaining===0 ? 'Goal reached!' : `Suggested today: ${minorMoney(p.suggested,sign)}\n${g.deadline?`Required today for ${g.deadline}: ${minorMoney(p.required,sign)}\n`:''}` +
     (p.suggested<p.required ? 'Your budget or daily cap limits the contribution.\n' : '') +
     (p.overdue ? 'Deadline has passed. Update the plan.\n' : '') +
     (p.finish ? `Estimated finish at this pace: ${p.finish}` : 'No contribution available at the current limit.'));
 }
-const USAGE = `Create a goal (use | between fields):
+const USAGE = `🎯 Savings goals
+Create or update a goal (amounts are AMD):
 /goal laptop | 960,381.77 | 2027-03-15 | 0 | 6000
-Name | target | deadline YYYY-MM-DD OR daily:3000 | already saved | optional daily cap
+/goal laptop 960381.77 2027-03-15 0 6000
+Name | target | deadline YYYY-MM-DD OR daily:3000 | starting saved | optional daily cap
 
-Run /goal to view progress. Repeat the command to update target/date/cap; existing savings stay unchanged.
-/save laptop 5500 — confirm a transfer
-/withdraw laptop 2000 — take money back out
-/funding shared 20000 — savings use your monthly budget; reserve 20,000 for bills
+Workflow: run /goal to see how much to set aside today, move that money yourself, then confirm it with /save laptop 5500. Use /withdraw laptop 2000 when money comes back out. Confirmed saves update the goal; they do not move money automatically.
+/funding shared 20000 — include confirmed savings in your monthly spending limit and protect a 20,000 reserve
 /funding separate — savings have separate funding (default)
 /remind 20:00 — daily savings reminder in your timezone
 /summary 21:00 — daily spending summary
 Use off instead of a time to disable.`;
 
+/** Parse the documented pipe form and the shorter space-separated form.
+ * For the latter, the plan token (a date or daily: amount) marks the boundary
+ * so goal names may still contain spaces or numbers.
+ */
+function goalParts(arg: string): string[] | null {
+  if (arg.includes('|')) return arg.split('|').map(x => x.trim());
+  const tokens = arg.split(/\s+/).filter(Boolean);
+  const planIndex = tokens.findIndex((token, index) => index > 0 && (validDate(token) || /^daily:/i.test(token)));
+  if (planIndex < 2) return null;
+  return [tokens.slice(0, planIndex - 1).join(' '), tokens[planIndex - 1]!, tokens[planIndex]!, ...tokens.slice(planIndex + 1)];
+}
+
 goals.command('goal', async ctx => {
   const arg = ctx.match.trim();
   if (arg) {
-    const parts = arg.split('|').map(x=>x.trim());
+    const parts = goalParts(arg);
+    if (!parts) { await ctx.reply(USAGE); return; }
     const [name,targetRaw,plan,openingRaw,capRaw] = parts;
     const target = parseMinor(targetRaw??'');
     const opening = parseMinor(openingRaw??'0',true);
     const cap = capRaw ? parseMinor(capRaw) : null;
     const deadline = plan && validDate(plan) ? plan : null;
-    const daily = plan?.startsWith('daily:') ? parseMinor(plan.slice(6)) : null;
+    const daily = plan?.match(/^daily:(.+)$/i) ? parseMinor(plan.slice(6)) : null;
     if (parts.length<3 || parts.length>5 || !name || !/^[\p{L}\p{N} _-]{1,40}$/u.test(name) || target===null || opening===null || (capRaw && cap===null) || (!deadline&&!daily) || (deadline && deadline<todayIn(ctx.tz))) {
       await ctx.reply(USAGE); return;
     }
@@ -71,11 +85,12 @@ for (const [command,kind] of [['remind','reminder'],['summary','summary']] as co
   await ctx.reply(time==='off'?`${kind} disabled.`:`${kind} set for ${time} (${ctx.tz}), delivered within about 5 minutes.`);
 });
 goals.command('alias',async ctx=> {
-  const [label,category,...extra] = ctx.match.split('|').map(x=>x.trim());
+  const [labelsRaw,category,...extra] = ctx.match.split('|').map(x=>x.trim());
   const cat = (await ctx.db.categories(ctx.userId)).find(c=>c.name.toLowerCase()===category?.toLowerCase());
-  if (!label || label.length>120 || !cat || extra.length) { await ctx.reply('Use /alias metro | Transport. This also categorizes matching channel rows already recorded.'); return; }
-  await ctx.db.finance.alias(ctx.userId,label,cat.id);
-  await ctx.reply(`${label} → ${cat.name}`);
+  const labels = (labelsRaw ?? '').split(',').map(label => label.trim()).filter(Boolean);
+  if (!labels.length || labels.some(label => label.length > 120) || !cat || extra.length) { await ctx.reply('Use /alias chatgpt, cigarette, coffee | Personal. This categorizes matching rows and remembers the rule for future entries.'); return; }
+  for (const label of labels) await ctx.db.finance.alias(ctx.userId,label,cat.id);
+  await ctx.reply(`${labels.join(', ')} → ${cat.name}. Future matching entries will be categorized automatically.`);
 });
 export function reminderKeyboard(id: number) {
   return new InlineKeyboard().text('Saved it',`saving:yes:${id}`).text('Different amount',`saving:other:${id}`).row().text('Skip today',`saving:skip:${id}`);

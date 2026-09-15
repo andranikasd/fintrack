@@ -12,8 +12,11 @@ services:
     environment:
       BOT_TOKEN: ${BOT_TOKEN:?Set BOT_TOKEN in .env}
       ALLOWED_USER_IDS: ${ALLOWED_USER_IDS:?Set ALLOWED_USER_IDS in .env}
+      DASHBOARD_URL: ${DASHBOARD_URL:-}
       DEFAULT_TZ: ${DEFAULT_TZ:-Asia/Yerevan}
       BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-7}
+    ports:
+      - "127.0.0.1:8080:8080"
     volumes:
       - data:/data
       - backups:/backups
@@ -32,7 +35,7 @@ services:
       options:
         max-size: '10m'
         max-file: '3'
-    # Long polling uses outbound HTTPS only. No host ports are exposed.
+    # The dashboard is bound to host loopback. Use the optional HTTPS proxy for remote access.
 
 volumes:
   data:

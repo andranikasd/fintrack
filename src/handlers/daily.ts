@@ -11,18 +11,19 @@ import { buildDailyChart } from '../pdf/daily';
 
 export const daily = new Composer<AppContext>();
 export async function dailyReport(db: Db,user: number,day: string,today: string,sign: string): Promise<string> {
-  const [spent,rows,cats,savings,previous,errors] = await Promise.all([
+  const [spent,rows,cats,savings,previous,errors,income] = await Promise.all([
     db.totalBetween(user,day,day),db.transactionsBetween(user,day,day,25),db.byCategory(user,day,day),
-    db.finance.savingsByDay(user,day,day),db.totalBetween(user,addDays(day,-1),addDays(day,-1)),db.finance.errors(user),
+    db.finance.savingsByDay(user,day,day),db.totalBetween(user,addDays(day,-1),addDays(day,-1)),db.finance.errors(user),db.income.total(user,day,day),
   ]);
-  const lines = [`${day}${day===today?' · so far':''}`,`Spent: ${money(spent,sign)}`,
+  const lines = [`${day}${day===today?' · so far':''}`,`Income: ${minorMoney(income,sign)}`,`Spent: ${money(spent,sign)}`,
     `Saved: ${minorMoney(savings[0]?.deposits??0,sign)}`,`Withdrawn from savings: ${minorMoney(savings[0]?.withdrawals??0,sign)}`,
-    `Previous day: ${money(previous,sign)}`,'',...cats.slice(0,12).map(c=>`${c.name}: ${money(c.total,sign)}`),'',
+    `Net cash flow: ${minorMoney(income-spent*100-(savings[0]?.deposits??0)+(savings[0]?.withdrawals??0),sign)}`,`Previous day spending: ${money(previous,sign)}`,'',...cats.slice(0,12).map(c=>`${c.name}: ${money(c.total,sign)}`),'',
     ...rows.slice(0,15).map(r=>`${r.note||r.category_name||'Expense'} — ${money(r.amount,sign)}`)];
   if (rows.length>15) lines.push('More expenses available in /export.');
   if (day===today) {
     const status = await financialStatus(db,user,today);
     lines.push('',status.budget===null?'Monthly budget not set. /budget 150000':`Monthly spending: ${money(status.spent,sign)} / ${money(status.budget,sign)}`);
+    lines.push(`Monthly income: ${minorMoney(status.income,sign)}`);
     if (status.available!==null) lines.push(`Available after reserve${status.prefs.funding==='shared'?' and net savings':''}: ${minorMoney(status.available,sign)}`);
     lines.push(...status.plans.slice(0,3).map(p=>`\n${goalText(p,sign)}`));
   }

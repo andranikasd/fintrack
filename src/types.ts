@@ -8,6 +8,7 @@ export interface Env {
   CURRENCY_SIGN: string;
   ALLOWED_USER_IDS: string;
   BOT_INFO?: string;
+  DASHBOARD_URL?: string;
 }
 
 export interface Category {

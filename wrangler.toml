@@ -32,3 +32,8 @@ CURRENCY = "AMD"
 CURRENCY_SIGN = "֏"
 # Comma-separated Telegram user ids allowed to use the bot. Empty = open to all.
 ALLOWED_USER_IDS = ""
+
+[[rules]]
+type = "Text"
+globs = ["**/*.html"]
+fallthrough = false

@@ -1,7 +1,7 @@
 import type { Database, Statement } from './database';
 import type { Goal } from './lib/savings';
 export interface Preferences { funding: 'shared' | 'separate'; reserve_minor: number; reminder_time: string | null; summary_time: string | null; }
-export interface SyncedRow { categoryId: number | null; label: string; amount: number; goalId?: number; }
+export interface SyncedRow { categoryId: number | null; label: string; amount: number; goalId?: number; income?: boolean; }
 export interface Channel { chat_id: number; user_id: number; title: string; }
 export interface Reminder { id: number; user_id: number; goal_id: number; day: string; amount_minor: number; status: string; }
 export class FinanceDb {
@@ -30,8 +30,11 @@ export class FinanceDb {
     if (!error) {
       statements.push(this.db.prepare(`DELETE FROM transactions WHERE source_chat=? AND source_message=? AND ${guard}`).bind(chat,message,chat,message,nonce));
       statements.push(this.db.prepare(`DELETE FROM savings WHERE source_chat=? AND source_message=? AND ${guard}`).bind(chat,message,chat,message,nonce));
+      statements.push(this.db.prepare(`DELETE FROM income WHERE source_chat=? AND source_message=? AND ${guard}`).bind(chat,message,chat,message,nonce));
       for (const row of rows) {
-        statements.push(row.goalId !== undefined
+        statements.push(row.income
+          ? this.db.prepare(`INSERT INTO income(user_id,source,amount_minor,received_on,source_chat,source_message) SELECT ?,?,?,?,?,? WHERE ${guard}`).bind(user,row.label,row.amount,day,chat,message,chat,message,nonce)
+          : row.goalId !== undefined
           ? this.db.prepare(`INSERT INTO savings(user_id,goal_id,amount_minor,saved_on,source_chat,source_message) SELECT ?,?,?,?,?,? WHERE ${guard}`).bind(user,row.goalId,row.amount,day,chat,message,chat,message,nonce)
           : this.db.prepare(`INSERT INTO transactions(user_id,category_id,amount,note,spent_on,source_chat,source_message) SELECT ?,?,?,?,?,?,? WHERE ${guard}`).bind(user,row.categoryId,row.amount,row.label,day,chat,message,chat,message,nonce));
       }
@@ -45,6 +48,7 @@ export class FinanceDb {
     await this.db.batch([
       this.db.prepare('DELETE FROM transactions WHERE user_id=? AND source_chat=? AND source_message=?').bind(user,chat,message),
       this.db.prepare('DELETE FROM savings WHERE user_id=? AND source_chat=? AND source_message=?').bind(user,chat,message),
+      this.db.prepare('DELETE FROM income WHERE user_id=? AND source_chat=? AND source_message=?').bind(user,chat,message),
       this.db.prepare('UPDATE channel_posts SET error=NULL WHERE user_id=? AND chat_id=? AND message_id=?').bind(user,chat,message),
       this.db.prepare('UPDATE goals SET opening_minor=-1 WHERE user_id=? AND opening_minor+COALESCE((SELECT SUM(amount_minor) FROM savings WHERE goal_id=goals.id),0)<0').bind(user),
     ]);
@@ -76,6 +80,11 @@ export class FinanceDb {
   }
   async goalSavingsOn(user: number, day: string) {
     return (await this.db.prepare('SELECT goal_id,SUM(amount_minor) AS total FROM savings WHERE user_id=? AND saved_on=? GROUP BY goal_id').bind(user,day).all<{goal_id:number;total:number}>()).results;
+  }
+  async savingsEntries(user: number, from: string, to: string) {
+    return (await this.db.prepare(`SELECT s.*,g.name AS goal_name FROM savings s JOIN goals g ON g.id=s.goal_id
+      WHERE s.user_id=? AND s.saved_on BETWEEN ? AND ? ORDER BY s.saved_on DESC,s.id DESC LIMIT 10001`)
+      .bind(user,from,to).all<{id:number;goal_id:number;goal_name:string;amount_minor:number;saved_on:string;source_chat:number|null}>()).results;
   }
   async savingsByDay(user: number, from: string, to: string) {
     return (await this.db.prepare(`SELECT saved_on AS day,SUM(CASE WHEN amount_minor>0 THEN amount_minor ELSE 0 END) AS deposits,

@@ -12,7 +12,7 @@ await build({
   target: 'node24',
   format: 'esm',
   packages: 'external',
-  loader: { '.ttf': 'binary' },
+  loader: { '.ttf': 'binary', '.html': 'text' },
   sourcemap: true,
   logLevel: 'info',
 });

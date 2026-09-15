@@ -1,3 +1,4 @@
+import { createDashboardHandler } from '../web/server';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { createBot, COMMANDS } from '../bot';
@@ -17,7 +18,7 @@ async function main(): Promise<void> {
   const tasks = new BackgroundTasks();
   const env: Env = {
     DB: db, BOT_TOKEN: config.token, ALLOWED_USER_IDS: config.ids,
-    DEFAULT_TZ: config.tz, CURRENCY: 'AMD', CURRENCY_SIGN: '֏', WEBHOOK_SECRET: '',
+    DASHBOARD_URL: config.dashboardUrl, DEFAULT_TZ: config.tz, CURRENCY: 'AMD', CURRENCY_SIGN: '֏', WEBHOOK_SECRET: '',
   };
   const bot = createBot(env, tasks);
   let lastPoll = 0;
@@ -34,8 +35,9 @@ async function main(): Promise<void> {
     return response;
   });
 
+  const handleDashboard = createDashboardHandler(env);
   const server = createServer((request, response) => {
-    if (request.url !== '/healthz') { response.writeHead(404).end(); return; }
+    if (request.url !== '/healthz') { void handleDashboard(request,response).catch(() => { if (!response.headersSent) response.writeHead(500); response.end(); }); return; }
     const now = Date.now();
     let healthy = !stopping && pollingStarted && now - lastPoll < 180_000 &&
       now - lastSchedule < 600_000 && now - lastBackup < 26 * 3600_000;
@@ -43,8 +45,8 @@ async function main(): Promise<void> {
     response.writeHead(healthy ? 200 : 503, { 'Content-Type': 'application/json' });
     response.end(JSON.stringify({ status: healthy ? 'ok' : 'starting-or-degraded' }));
   });
-  // Health endpoint is local to the container and is not published by Compose.
-  server.listen(8080, '127.0.0.1');
+  // Compose publishes only to host loopback unless an HTTPS proxy is enabled.
+  server.listen(8080, '0.0.0.0');
 
   const tick = async () => {
     try {

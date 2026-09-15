@@ -9,6 +9,7 @@ export default defineConfig({
       enforce: 'pre',
       load(id) {
         const file = id.split('?')[0]!;
+        if (file.endsWith('.html')) return `export default ${JSON.stringify(readFileSync(file, 'utf8'))};`;
         if (!file.endsWith('.ttf')) return null;
         const base64 = readFileSync(file).toString('base64');
         return `const bytes = Uint8Array.from(atob(${JSON.stringify(base64)}), (c) => c.charCodeAt(0));

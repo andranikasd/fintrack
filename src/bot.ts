@@ -1,3 +1,5 @@
+import { dashboard } from './handlers/dashboard';
+import { income } from './handlers/income';
 import { categoryReview } from './handlers/category-review';
 import type { BackgroundWork } from './database';
 import { channelCommands, handleChannelPost } from './handlers/channel';
@@ -18,6 +20,8 @@ import { stats } from './handlers/stats';
 import type { Env } from './types';
 
 export const COMMANDS = [
+  { command: 'dashboard', description: 'Interactive charts and money management' },
+  { command: 'income', description: 'Record income and view sources' },
   { command: 'uncategorized', description: 'Assign categories to unknown items' },
   { command: 'today', description: 'Today spending and savings' },
   { command: 'yesterday', description: 'Yesterday spending and savings' },
@@ -94,7 +98,9 @@ export function createBot(env: Env, exec: BackgroundWork): Bot<AppContext> {
 
   bot.use(channelCommands);
   bot.use(goals);
+  bot.use(dashboard);
   bot.use(daily);
+  bot.use(income);
   bot.use(categoryReview);
   bot.use(common);
   bot.use(menu);

@@ -1,3 +1,4 @@
+import { IncomeDb } from './income-db';
 import type { Database, Statement } from './database';
 import { FinanceDb } from './finance-db';
 import type { Budget, Category, CategoryTotal, TxWithCategory } from './types';
@@ -19,10 +20,11 @@ const DEFAULT_CATEGORIES: Array<[string, string]> = [
 
 export class Db {
   readonly finance: FinanceDb;
+  readonly income: IncomeDb;
   constructor(
     private readonly d1: Database,
     private readonly defaultTz: string,
-  ) { this.finance = new FinanceDb(d1); }
+  ) { this.finance = new FinanceDb(d1); this.income = new IncomeDb(d1); }
 
   async ensureUser(userId: number): Promise<string> {
     const existing = await this.d1

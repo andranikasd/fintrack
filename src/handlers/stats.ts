@@ -54,6 +54,8 @@ export async function monthReport(
 
   const prefs = await db.finance.preferences(userId);
   const netSavings = await db.finance.savingsTotal(userId,from,to);
+  const received = await db.income.total(userId,from,to);
+  lines.push(`Income: ${minorMoney(received,sign)}`,`Net cash flow after savings: ${minorMoney(received-total*100-netSavings,sign)}`);
   lines.push(`Confirmed net savings: ${minorMoney(netSavings,sign)}`);
   if (limit) lines.push(`Available after reserve${prefs.funding === 'shared' ? ' and net savings' : ''}: ${minorMoney(limit*100-total*100-prefs.reserve_minor-(prefs.funding === 'shared'?netSavings:0),sign)}`);
 

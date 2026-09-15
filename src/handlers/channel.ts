@@ -57,6 +57,7 @@ export async function handleChannelPost(ctx: AppContext, db: Db, allowlist: Set<
     parsed = parseDailyPost(post,tz);
     const [categories,aliases,goals] = await Promise.all([db.categories(linked.user_id),db.finance.aliases(linked.user_id),db.finance.goals(linked.user_id)]);
     rows = parsed.rows.map(row => {
+      if (row.kind === 'income') return {categoryId:null,label:row.label,amount:row.amountMinor,income:true};
       if (row.kind !== 'expense') {
         const goal = goals.find(g=>g.name.toLowerCase()===row.label.toLowerCase());
         if (!goal) throw new Error(`Unknown savings goal: ${row.label}. Create it with /goal first.`);
@@ -79,7 +80,7 @@ export async function handleChannelPost(ctx: AppContext, db: Db, allowlist: Set<
     await ctx.api.sendMessage(linked.user_id,`Could not sync channel post #${post.message_id}: ${error}\nThe last valid records are preserved. Correct the post and edit again.`);
   } else {
     if (parsed!.warning) await ctx.api.sendMessage(linked.user_id,`Post #${post.message_id}: ${parsed!.warning}`);
-    for (const category of new Set(rows.filter(r=>r.goalId===undefined).map(r=>r.categoryId))) {
+    for (const category of new Set(rows.filter(r=>r.goalId===undefined&&!r.income).map(r=>r.categoryId))) {
       await checkBudgets(db,ctx.api,linked.user_id,linked.user_id,parsed!.day,category,sign);
     }
   }

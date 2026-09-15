@@ -16,7 +16,16 @@ export function loadConfig(values: NodeJS.ProcessEnv) {
   if (!Number.isInteger(retention) || retention < 1 || retention > 365) {
     throw new Error('BACKUP_RETENTION_DAYS must be an integer between 1 and 365.');
   }
+  const dashboardUrl = values.DASHBOARD_URL?.trim().replace(/\/$/, '') || '';
+  if (dashboardUrl) {
+    let url: URL;
+    try { url = new URL(dashboardUrl); } catch { throw new Error('DASHBOARD_URL must be a valid HTTPS origin.'); }
+    if ((url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost','127.0.0.1'].includes(url.hostname))) ||
+        url.username || url.password || url.pathname !== '/' || url.search || url.hash) {
+      throw new Error('DASHBOARD_URL must be an HTTPS origin (HTTP is allowed only for localhost).');
+    }
+  }
   const dataDir = resolve(values.DATA_DIR || '/data');
   const backupDir = resolve(values.BACKUP_DIR || '/backups');
-  return { token, ids, tz, dataDir, backupDir, retention };
+  return { token, ids, tz, dataDir, backupDir, retention, dashboardUrl };
 }

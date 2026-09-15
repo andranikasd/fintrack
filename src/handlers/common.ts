@@ -24,7 +24,9 @@ No category in the text? The bot asks with one tap.
 /chart 30 — interactive income, spending and savings charts
 /chartpdf 30 — PDF chart
 /dashboard — private live dashboard, or an offline HTML snapshot
-/income salary 450000 — record received income
+/account Card 100000 — create an account with an opening balance
+/accounts — recorded account balances
+/income Salary @ Card 450000 — record received income
 /goal — savings goals; /goalhelp for setup examples
 /save laptop 5500 — confirm money moved to savings
 /withdraw laptop 2000 — record money taken back out
@@ -35,7 +37,7 @@ No category in the text? The bot asks with one tap.
 /syncstatus — posts needing correction
 /forgetpost CHANNEL_ID MESSAGE_ID — remove a deleted post's records
 
-Edit your daily channel table to correct amounts or remove rows. Savings rows use save:laptop or withdraw:laptop as the item. Income rows use income:salary. Totals are calculated from expense rows, excluding savings transfers.
+Edit your daily channel table to correct amounts or remove rows. Savings rows use save:laptop or withdraw:laptop as the item. Income rows use income:Salary @ Card. Add [passive] after the account name for passive income. Totals are calculated from expense rows, excluding savings transfers.
 
 <b>Commands</b>
 /month — this month, by category

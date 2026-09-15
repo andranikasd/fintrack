@@ -1,3 +1,4 @@
+import { accountEntry } from '../lib/account-entry';
 import { Composer } from 'grammy';
 import type { AppContext } from '../context';
 import type { Db } from '../db';
@@ -55,9 +56,14 @@ export async function handleChannelPost(ctx: AppContext, db: Db, allowlist: Set<
   let error: string | null = null;
   try {
     parsed = parseDailyPost(post,tz);
-    const [categories,aliases,goals] = await Promise.all([db.categories(linked.user_id),db.finance.aliases(linked.user_id),db.finance.goals(linked.user_id)]);
+    const [categories,aliases,goals,accounts,accountNames] = await Promise.all([db.categories(linked.user_id),db.finance.aliases(linked.user_id),db.finance.goals(linked.user_id),db.accounts.list(linked.user_id,parsed.day),db.accounts.aliases(linked.user_id)]);
     rows = parsed.rows.map(row => {
-      if (row.kind === 'income') return {categoryId:null,label:row.label,amount:row.amountMinor,income:true};
+      const entry=row.kind==='income'||row.kind==='expense'?accountEntry(row.label):{label:row.label,accountName:null,passive:false};
+      const account=entry.accountName?accounts.find(a=>a.name.toLowerCase()===entry.accountName!.toLowerCase()||accountNames.some(n=>n.account_id===a.id&&n.name.toLowerCase()===entry.accountName!.toLowerCase())):null;
+      if (entry.accountName&&!account) throw new Error('Unknown account: '+entry.accountName+'. Create it in the dashboard.');
+      if(row.kind==='income'&&!account) throw new Error('Income needs a receiving account. Use income:Salary @ Card and create Card in /dashboard or /account.');
+      if (row.kind === 'income') return {categoryId:null,label:entry.label,amount:row.amountMinor,income:true,accountId:account?.id,passive:entry.passive};
+      if (row.kind === 'expense') row.label=entry.label;
       if (row.kind !== 'expense') {
         const goal = goals.find(g=>g.name.toLowerCase()===row.label.toLowerCase());
         if (!goal) throw new Error(`Unknown savings goal: ${row.label}. Create it with /goal first.`);
@@ -65,7 +71,7 @@ export async function handleChannelPost(ctx: AppContext, db: Db, allowlist: Set<
       }
       const alias = aliases.find(a=>a.label.toLowerCase()===row.label.toLowerCase());
       const categoryId = alias && categories.some(c=>c.id===alias.category_id) ? alias.category_id : matchCategory(row.label,categories).category?.id ?? null;
-      return {categoryId,label:row.label,amount:row.amountMinor/100};
+      return {categoryId,label:row.label,amount:row.amountMinor/100,accountId:account?.id};
     });
   } catch (err) { error = err instanceof Error ? err.message : 'Could not read this post.'; }
   let changed: boolean;

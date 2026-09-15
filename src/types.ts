@@ -21,6 +21,7 @@ export interface Category {
 }
 
 export interface Transaction {
+  account_id?: number | null;
   source_chat?: number | null;
   source_message?: number | null;
   id: number;

@@ -34,6 +34,8 @@ const api = async (method, body) => {
 };
 
 const COMMANDS = [
+  ['account', 'Create an account with an opening balance'],
+  ['accounts', 'View recorded account balances'],
   ['income', 'Record income and view sources'],
   ['dashboard', 'Interactive charts and money management'],
   ['chartpdf', 'Daily spending and savings PDF'],

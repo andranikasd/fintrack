@@ -20,7 +20,7 @@ describe('production SQLite storage', () => {
   it('migrates once, persists across restarts, and stores exact savings', async () => {
     const path = join(temporary(), 'fintrack.sqlite');
     const db = open(path);
-    expect(db.migrate('migrations')).toEqual(['0001_init.sql', '0002_channel_savings.sql', '0003_income.sql', '0004_dashboard.sql']);
+    expect(db.migrate('migrations')).toEqual(['0001_init.sql', '0002_channel_savings.sql', '0003_income.sql', '0004_dashboard.sql', '0005_accounts.sql']);
     await db.prepare('INSERT INTO users(id) VALUES(?)').bind(123).run();
     await db.prepare("INSERT INTO goals(user_id,name,target_minor,daily_minor) VALUES(123,'laptop',96038177,300000)").run();
     db.close();

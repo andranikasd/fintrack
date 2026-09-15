@@ -49,7 +49,14 @@ try {
       if(data.records.filter(r=>r.kind==='income').reduce((s,r)=>s+r.amountMinor,0)!==45000000)throw new Error('Dashboard income incorrect');
       const post=await fetch(origin+'/api/action',{method:'POST',headers:{Origin:origin,Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify({action:'budget',amount:'150000',requestId:crypto.randomUUID()})});
       if(post.status!==200)throw new Error('Dashboard update failed');
-      console.log('Live dashboard sign-in, income and budget update passed.');
+      const account=data.accounts.find(a=>a.name==='Card');
+      if(!account||account.balance_minor!==45000000)throw new Error('Account income balance incorrect');
+      const passive=await fetch(origin+'/api/action',{method:'POST',headers:{Origin:origin,Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify({action:'add-income',label:'Interest',accountId:account.id,passive:true,amount:'100.77',requestId:crypto.randomUUID()})});
+      if(passive.status!==200)throw new Error('Passive income write failed');
+      const refreshed=await (await fetch(origin+'/api/dashboard',{headers:{Cookie:cookie}})).json();
+      if(refreshed.accounts.find(a=>a.id===account.id).balance_minor!==45010077||!refreshed.records.some(r=>r.passive&&r.accountId===account.id))throw new Error('Passive income balance incorrect');
+      if(!refreshed.insights.review||!refreshed.insights.trendPeriods.length)throw new Error('Dashboard views missing');
+      console.log('Live dashboard sign-in, accounts, passive income, views and budget update passed.');
     })().catch(e=>{console.error(e.message);process.exit(1)});
   `);
 
@@ -58,7 +65,7 @@ try {
   compose('restart', 'bot');
   await healthy();
   assert.equal(sql('SELECT SUM(amount) AS n FROM transactions')[0].n, 750);
-  assert.equal(sql('SELECT COUNT(*) AS n FROM schema_migrations')[0].n, 4);
+  assert.equal(sql('SELECT COUNT(*) AS n FROM schema_migrations')[0].n, 5);
   const snapshot = execFileSync('docker', [...args, 'exec', '-T', 'bot', 'cat', '/backups/smoke.sqlite'], { env });
   sql("INSERT INTO transactions(user_id,amount,note,spent_on) VALUES(123456789,100,'after backup','2026-09-15') RETURNING id");
   compose('stop', 'bot');

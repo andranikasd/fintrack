@@ -23,14 +23,69 @@ export async function dashboardAction(db: Db, sql: Database, user: number, tz: s
   const today = todayIn(tz);
   const day = body.day === undefined ? today : body.day;
   if (typeof day!=='string' || !validDate(day) || day>today) throw new ActionError('Choose today or a past date.');
+  const account = async(required=false) => {
+    if (body.accountId==null) { if(required) throw new ActionError('Choose the account that received this income. Create an account first.'); return null; }
+    const a=await db.accounts.get(user,id(body.accountId));
+    if (!a||a.archived) throw new ActionError('Choose an active account.');
+    return a.id;
+  };
   switch (body.action) {
+    case 'account-create':
+    case 'account-edit': {
+      const name=label(body.label);
+      if(name.length>60) throw new ActionError('Account names must be at most 60 characters.');
+      const opening=typeof body.opening==='string'?parseMinor(body.opening,true):null;
+      if(opening===null) throw new ActionError('Enter a nonnegative opening balance with at most two decimals.');
+      if(typeof body.openingOn!=='string'||!validDate(body.openingOn)||body.openingOn>today) throw new ActionError('Choose an opening date no later than today.');
+      const passive=body.passive===true?1:0;
+      const named=await db.accounts.named(user,name,true);
+      if(named&&named.id!==body.id) {
+        const retry=await sql.prepare('SELECT id FROM accounts WHERE user_id=? AND event_key=?').bind(user,event).first<{id:number}>();
+        if(body.action==='account-create'&&retry?.id===named.id)return;
+        throw new ActionError('An account already uses that name (or used it previously).');
+      }
+      try {
+        if(body.action==='account-create') await sql.batch([
+          sql.prepare('INSERT INTO accounts(user_id,name,opening_minor,opening_on,passive_income,event_key) VALUES(?,?,?,?,?,?) ON CONFLICT(event_key) DO NOTHING').bind(user,name,opening,body.openingOn,passive,event),
+          sql.prepare('INSERT OR IGNORE INTO account_names(user_id,name,account_id) SELECT user_id,name,id FROM accounts WHERE user_id=? AND event_key=?').bind(user,event),
+        ]);
+        else {
+          const accountId=id(body.id),version=id(body.version);
+          const results=await sql.batch([
+            sql.prepare('INSERT OR IGNORE INTO account_names(user_id,name,account_id) SELECT user_id,name,id FROM accounts WHERE user_id=? AND id=?').bind(user,accountId),
+            sql.prepare('UPDATE accounts SET name=?,opening_minor=?,opening_on=?,passive_income=?,archived=?,version=version+1 WHERE user_id=? AND id=? AND version=?')
+              .bind(name,opening,body.openingOn,passive,body.archived===true?1:0,user,accountId,version),
+            sql.prepare('INSERT OR IGNORE INTO account_names(user_id,name,account_id) SELECT user_id,name,id FROM accounts WHERE user_id=? AND id=?').bind(user,accountId),
+          ]);
+          if(!results[1]?.meta.changes) throw new ActionError('Account changed. Refresh and try again.',409);
+        }
+      } catch(error) { if(error instanceof Error&&/UNIQUE/.test(error.message)) throw new ActionError('An account with that name already exists.'); throw error; }
+      return;
+    }
+    case 'goal-plan': {
+      const name=label(body.label), target=amount(body.target), daily=body.daily?amount(body.daily):null, cap=body.cap?amount(body.cap):null;
+      const deadline=body.deadline||null;
+      if(deadline!==null&&(typeof deadline!=='string'||!validDate(deadline))) throw new ActionError('Choose a valid deadline.');
+      if(!deadline&&!daily) throw new ActionError('Set a deadline or a daily savings amount.');
+      const existing=body.id?(await db.finance.goals(user)).find(g=>g.id===id(body.id)):null;
+      if(body.id&&!existing) throw new ActionError('Goal not found.',404);
+      if(existing&&existing.name!==name) throw new ActionError('Keep the goal name when editing its plan.');
+      await db.finance.putGoal(user,name,target,deadline as string|null,daily,0,cap); return;
+    }
+    case 'category-budget': {
+      const category=await db.category(user,id(body.categoryId));
+      if(!category||category.archived) throw new ActionError('Choose an active category.');
+      if(body.amount==='') await db.clearBudget(user,category.id);
+      else await db.setBudget(user,category.id,amount(body.amount,true)/100);
+      return;
+    }
     case 'add-income':
-      await db.income.add(user,label(body.label),amount(body.amount),day,event); return;
+      await db.income.add(user,label(body.label),amount(body.amount),day,event,await account(true),body.passive===true); return;
     case 'add-expense': {
       const category = body.categoryId===null?null:await db.category(user,id(body.categoryId));
       if (body.categoryId!==null && (!category||category.archived)) throw new ActionError('Choose an active category.');
-      await sql.prepare('INSERT OR IGNORE INTO transactions(user_id,category_id,amount,note,spent_on,dashboard_event) VALUES(?,?,?,?,?,?)')
-        .bind(user,category?.id??null,amount(body.amount,true)/100,label(body.label),day,event).run(); return;
+      await sql.prepare('INSERT OR IGNORE INTO transactions(user_id,category_id,amount,note,spent_on,dashboard_event,account_id) VALUES(?,?,?,?,?,?,?)')
+        .bind(user,category?.id??null,amount(body.amount,true)/100,label(body.label),day,event,await account()).run(); return;
     }
     case 'category': {
       const tx = await db.transaction(user,id(body.id));
@@ -66,10 +121,11 @@ export async function dashboardAction(db: Db, sql: Database, user: number, tz: s
       if (!expected || expected.amountMinor!==Number(row[amountColumn])*(body.kind==='expense'?100:1) || expected.day!==row[dateColumn] || expected.label!==row[nameColumn]) throw new ActionError('This record changed. Refresh and try again.',409);
       const guard=`user_id=? AND id=? AND source_chat IS NULL AND ${amountColumn}=? AND ${dateColumn}=? AND ${nameColumn}=?`;
       const params=[user,recordId,row[amountColumn],row[dateColumn],row[nameColumn]];
+      const accountId=body.action==='edit'?await account(body.kind==='income'):null;
       const result=body.action==='delete'
         ? await sql.prepare(`DELETE FROM ${table} WHERE ${guard}`).bind(...params).run()
-        : await sql.prepare(`UPDATE ${table} SET ${amountColumn}=?,${dateColumn}=?,${nameColumn}=? WHERE ${guard}`)
-          .bind(amount(body.amount,body.kind==='expense')/(body.kind==='expense'?100:1),day,label(body.label),...params).run();
+        : await sql.prepare(`UPDATE ${table} SET ${amountColumn}=?,${dateColumn}=?,${nameColumn}=?,account_id=?${body.kind==='income'?',passive=?':''} WHERE ${guard}`)
+          .bind(amount(body.amount,body.kind==='expense')/(body.kind==='expense'?100:1),day,label(body.label),accountId,...(body.kind==='income'?[body.passive===true?1:0]:[]),...params).run();
       if (!result.meta.changes) throw new ActionError('This record changed. Refresh and try again.',409);
       return;
     }

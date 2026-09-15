@@ -247,7 +247,7 @@ notification, but cannot duplicate a confirmed contribution.
 - `/chart 30`: interactive HTML charts for income, expenses, savings and categories; 1–366 days.
 - `/dashboard`: live dashboard when configured; otherwise a 90-day HTML snapshot.
 - `/chartpdf 30`: the previous PDF chart, for 1–90 days.
-- `/income salary 450000`: record income; `/income` shows monthly income by source.
+- `/income Salary @ Card 450000`: record income; `/income` shows monthly income by source.
 - `/month`: spending, net savings and budget availability.
 - `/summary 21:00`: daily private report plus a seven-day interactive HTML chart.
 - `/export`: existing expense PDF/CSV reports; these exports remain expense-only.

@@ -4,6 +4,8 @@ export interface Income {
   id: number;
   user_id: number;
   source: string;
+  account_id: number | null;
+  passive: number;
   amount_minor: number;
   received_on: string;
   source_chat: number | null;
@@ -13,10 +15,10 @@ export interface Income {
 export class IncomeDb {
   constructor(private readonly db: Database) {}
 
-  async add(user: number, source: string, amount: number, day: string, event: string): Promise<boolean> {
+  async add(user: number, source: string, amount: number, day: string, event: string, account: number | null = null, passive = false): Promise<boolean> {
     const result = await this.db.prepare(`INSERT OR IGNORE INTO income
-      (user_id,source,amount_minor,received_on,event_key) VALUES(?,?,?,?,?)`)
-      .bind(user,source,amount,day,event).run();
+      (user_id,source,amount_minor,received_on,event_key,account_id,passive) VALUES(?,?,?,?,?,?,?)`)
+      .bind(user,source,amount,day,event,account,passive?1:0).run();
     return (result.meta.changes ?? 0) > 0;
   }
 

@@ -185,15 +185,15 @@ attach an interactive seven-day HTML report.
 Record money when you receive it:
 
 ```text
-/income salary 450000
-/income freelance 25000.50 2026-09-15
+/income Salary @ Card 450000
+/income Freelance @ Card 25000.50 2026-09-15
 ```
 
 Or add income alongside expenses in your daily channel table:
 
 ```text
 Item | price
-income:salary | 450000
+income:Salary @ Card | 450000
 metro | 150
 save:laptop | 5500.77
 ```
@@ -267,3 +267,86 @@ and session after a restore:
 ```bash
 docker compose exec bot sqlite3 /data/fintrack.sqlite 'DELETE FROM dashboard_tokens;'
 ```
+
+
+## Dashboard views and accounts
+
+Use the view buttons at the top of `/dashboard`:
+
+- **Today:** today's confirmed spending/income, daily allowance from the monthly
+  budget after reserve (and savings when funding is shared), and suggested savings.
+- **Monthly overview:** income, expenses, net savings rate, current budget limits,
+  category budgets and comparison with the same days of the previous month.
+  Full historical months compare with full previous months. Change months with
+  the arrows above the view. Budget history is not stored; limits are current settings.
+- **Spending calendar:** spending intensity by day; click a day to open its records.
+- **Category trends:** six months of category totals with proportional bars; click
+  a total to explore that category and month. The current month is incomplete.
+- **Goal planner:** create/edit a target, deadline, daily amount and cap, record
+  actual deposits, and try a daily contribution to estimate a finish date. Estimates
+  do not record money. A deadline takes precedence over a daily amount when both exist.
+- **Review inbox:** uncategorized items, failed channel syncs, possible duplicate
+  expenses/income, and unassigned income across your history. Duplicate detection
+  flags matching day/name/amount/account; it never removes records automatically.
+- **Accounts:** create, rename, edit opening balances/dates, archive, and mark
+  accounts that earn passive income. Old account names remain reserved so existing
+  channel rows keep syncing after a rename. Archived accounts preserve history.
+
+### Record an account and actual income
+
+```text
+/account Card 100000 2026-09-01
+/income Salary @ Card 450000
+/income Interest @ Card [passive] 1500.77
+/accounts
+```
+
+The opening balance is **before the opening day's activity**. The recorded balance
+is opening balance + assigned income − assigned expenses, counting entries from
+that date onward. Correct the opening amount/date in the live Accounts view if
+needed. Entries before that date remain in reports but do not change the balance.
+Unassigned historical records do not affect any account.
+
+Income has no fixed schedule or automatic credits. Every new receipt requires a
+receiving account. Marking an account as earning passive income is descriptive;
+mark the actual receipt as passive when recording it. Filter the ledger/charts
+by account or passive income. CSV export includes these fields.
+
+Channel examples (create the named account first):
+
+```text
+2026-09-15
+Item | price
+income:Salary @ Card | 450000
+income:Interest @ Card [passive] | 1500.77
+metro @ Card | 150
+coffee @ Card | 1200
+Total: 1350
+```
+
+An expense account is optional; income needs one. An unknown receiving account
+causes a sync error and preserves the last valid version of that post. Correct
+its account name or create the account, then edit the post to retry. Edit source
+channel rows to change their account assignment, amount or date. Manual entries
+can be edited in the dashboard. Savings goals remain separate from account balances;
+recording a goal deposit does not debit an account. There are no account transfers.
+
+Standalone HTML reports include the views and local navigation but cannot save
+changes. Calendar drill-down is limited to the snapshot's records. Monthly totals
+are labeled partial when the snapshot does not cover the full comparison period.
+Use the live dashboard for account, plan and budget editing.
+
+### Upgrade
+
+```bash
+docker compose up -d --build
+```
+
+If using the HTTPS dashboard override, retain it:
+
+```bash
+docker compose -f compose.yaml -f compose.dashboard.yaml up -d --build
+```
+
+Migration `0005_accounts.sql` runs automatically. Existing amounts and savings
+history stay intact; existing income/expenses start without an account assignment.

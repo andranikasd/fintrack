@@ -1,7 +1,7 @@
 import type { Database, Statement } from './database';
 import type { Goal } from './lib/savings';
 export interface Preferences { funding: 'shared' | 'separate'; reserve_minor: number; reminder_time: string | null; summary_time: string | null; }
-export interface SyncedRow { categoryId: number | null; label: string; amount: number; goalId?: number; income?: boolean; }
+export interface SyncedRow { categoryId: number | null; label: string; amount: number; goalId?: number; income?: boolean; accountId?:number|null; passive?:boolean; }
 export interface Channel { chat_id: number; user_id: number; title: string; }
 export interface Reminder { id: number; user_id: number; goal_id: number; day: string; amount_minor: number; status: string; }
 export class FinanceDb {
@@ -33,10 +33,10 @@ export class FinanceDb {
       statements.push(this.db.prepare(`DELETE FROM income WHERE source_chat=? AND source_message=? AND ${guard}`).bind(chat,message,chat,message,nonce));
       for (const row of rows) {
         statements.push(row.income
-          ? this.db.prepare(`INSERT INTO income(user_id,source,amount_minor,received_on,source_chat,source_message) SELECT ?,?,?,?,?,? WHERE ${guard}`).bind(user,row.label,row.amount,day,chat,message,chat,message,nonce)
+          ? this.db.prepare(`INSERT INTO income(user_id,source,amount_minor,received_on,source_chat,source_message,account_id,passive) SELECT ?,?,?,?,?,?,?,? WHERE ${guard}`).bind(user,row.label,row.amount,day,chat,message,row.accountId??null,row.passive?1:0,chat,message,nonce)
           : row.goalId !== undefined
           ? this.db.prepare(`INSERT INTO savings(user_id,goal_id,amount_minor,saved_on,source_chat,source_message) SELECT ?,?,?,?,?,? WHERE ${guard}`).bind(user,row.goalId,row.amount,day,chat,message,chat,message,nonce)
-          : this.db.prepare(`INSERT INTO transactions(user_id,category_id,amount,note,spent_on,source_chat,source_message) SELECT ?,?,?,?,?,?,? WHERE ${guard}`).bind(user,row.categoryId,row.amount,row.label,day,chat,message,chat,message,nonce));
+          : this.db.prepare(`INSERT INTO transactions(user_id,category_id,amount,note,spent_on,source_chat,source_message,account_id) SELECT ?,?,?,?,?,?,?,? WHERE ${guard}`).bind(user,row.categoryId,row.amount,row.label,day,chat,message,row.accountId??null,chat,message,nonce));
       }
     }
     if (!error) statements.push(this.db.prepare(`UPDATE goals SET opening_minor=-1

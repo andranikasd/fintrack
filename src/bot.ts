@@ -21,6 +21,8 @@ import type { Env } from './types';
 
 export const COMMANDS = [
   { command: 'dashboard', description: 'Interactive charts and money management' },
+  { command: 'account', description: 'Create an account with an opening balance' },
+  { command: 'accounts', description: 'View recorded account balances' },
   { command: 'income', description: 'Record income and view sources' },
   { command: 'uncategorized', description: 'Assign categories to unknown items' },
   { command: 'today', description: 'Today spending and savings' },

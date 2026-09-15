@@ -16,8 +16,9 @@ const updates = [
   { update_id: 4, channel_post: { message_id: 1, date: now, chat: channel, rich_message: { blocks: [{ type: 'table', cells: [['Item', 'price'], ['metro', '150'], ['redline', '600']].map(row => row.map(text => ({ text, align: 'center', valign: 'middle' }))) }] } } },
   message(5, '/save laptop 5500'),
   message(6, '/chartpdf 7'),
-  message(7, '/income salary 450000'),
-  message(8, '/dashboard'),
+  message(7, '/account Card 0'),
+  message(8, '/income Salary @ Card 450000'),
+  message(9, '/dashboard'),
 ];
 const fake = async (url, options = {}) => {
   if (!String(url).startsWith('https://api.telegram.org/')) throw new Error('Unexpected network request in smoke test');

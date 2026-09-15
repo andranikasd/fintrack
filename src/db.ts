@@ -1,3 +1,4 @@
+import { AccountsDb } from './accounts-db';
 import { IncomeDb } from './income-db';
 import type { Database, Statement } from './database';
 import { FinanceDb } from './finance-db';
@@ -21,10 +22,11 @@ const DEFAULT_CATEGORIES: Array<[string, string]> = [
 export class Db {
   readonly finance: FinanceDb;
   readonly income: IncomeDb;
+  readonly accounts: AccountsDb;
   constructor(
     private readonly d1: Database,
     private readonly defaultTz: string,
-  ) { this.finance = new FinanceDb(d1); this.income = new IncomeDb(d1); }
+  ) { this.finance = new FinanceDb(d1); this.income = new IncomeDb(d1); this.accounts = new AccountsDb(d1); }
 
   async ensureUser(userId: number): Promise<string> {
     const existing = await this.d1
@@ -316,6 +318,32 @@ export class Db {
       .bind(userId)
       .first<{ d: string | null }>();
     return row?.d ?? null;
+  }
+
+  async categoryTrends(user: number, from: string, to: string) {
+    return (await this.d1.prepare(`SELECT substr(t.spent_on,1,7) AS period,t.category_id,
+      COALESCE(c.name,'Uncategorized') AS name,SUM(t.amount)*100 AS amountMinor
+      FROM transactions t LEFT JOIN categories c ON c.id=t.category_id
+      WHERE t.user_id=? AND t.spent_on BETWEEN ? AND ? GROUP BY period,t.category_id ORDER BY period`)
+      .bind(user,from,to).all<{period:string;category_id:number|null;name:string;amountMinor:number}>()).results;
+  }
+
+  async reviewItems(user: number) {
+    const [unknown,duplicates,errors,unassignedIncome] = await Promise.all([
+      this.d1.prepare(`SELECT id,note AS label,spent_on AS day,amount*100 AS amountMinor FROM transactions
+        WHERE user_id=? AND category_id IS NULL ORDER BY spent_on DESC,id DESC LIMIT 101`).bind(user).all<{id:number;label:string;day:string;amountMinor:number}>(),
+      this.d1.prepare(`SELECT kind,day,label,amountMinor,COUNT(*) AS count FROM (
+        SELECT 'expense' AS kind,spent_on AS day,note AS label,amount*100 AS amountMinor,account_id,0 AS passive FROM transactions WHERE user_id=?
+        UNION ALL SELECT 'income',received_on,source,amount_minor,account_id,passive FROM income WHERE user_id=?)
+        GROUP BY kind,day,lower(trim(label)),amountMinor,account_id,passive HAVING COUNT(*)>1
+        ORDER BY day DESC LIMIT 101`).bind(user,user).all<{day:string;label:string;amountMinor:number;count:number}>(),
+      this.finance.errors(user),
+      this.d1.prepare(`SELECT id,source AS label,received_on AS day,amount_minor AS amountMinor,
+        source_chat,passive FROM income WHERE user_id=? AND account_id IS NULL
+        ORDER BY received_on DESC,id DESC LIMIT 101`).bind(user).all<{id:number;label:string;day:string;amountMinor:number;source_chat:number|null;passive:number}>(),
+    ]);
+    return {unassignedIncome:unassignedIncome.results.slice(0,100).map(r=>({...r,kind:'income' as const,channel:r.source_chat!==null,passive:Boolean(r.passive),accountId:null})),unknown:unknown.results.slice(0,100),duplicates:duplicates.results.slice(0,100),errors,
+      truncated:unknown.results.length>100||duplicates.results.length>100||unassignedIncome.results.length>100};
   }
 
   // ------------------------------------------------------------------ budgets

@@ -19,6 +19,7 @@ const requestId=()=>crypto.randomUUID();
 async function fixture(){
   const {db,d1}=testDb();await db.ensureUser(1);await db.ensureUser(2);
   const day=todayIn('Asia/Yerevan'),from=addDays(day,-29);
+  await d1.prepare('INSERT INTO accounts(user_id,name,opening_on) VALUES(?,?,?)').bind(1,'Card',from).run();
   const transport=(await db.categories(1)).find(c=>c.name==='Transport')!;
   await db.setBudget(1,0,150000);
   await db.finance.putGoal(1,'Laptop',96038177,null,300000,20000000,null);
@@ -51,9 +52,9 @@ describe('income tracking',()=>{
     const {db,d1,day}=await fixture();await db.finance.link(-1001,1,'Expenses');
     const env={DB:d1,BOT_TOKEN:'test',BOT_INFO:JSON.stringify({id:99,is_bot:true,first_name:'Test',username:'test_bot'}),ALLOWED_USER_IDS:'1',DEFAULT_TZ:'Asia/Yerevan',CURRENCY:'AMD',CURRENCY_SIGN:'֏',WEBHOOK_SECRET:'test'};
     const bot=createBot(env,{waitUntil:()=>{}});bot.api.config.use(async()=>({ok:true,result:true} as never));
-    const update={update_id:1,message:{message_id:10,date:Math.floor(Date.now()/1000),from:{id:1,is_bot:false,first_name:'User'},chat:{id:1,type:'private' as const,first_name:'User'},text:'/income Bonus 1500.77',entities:[{type:'bot_command' as const,offset:0,length:7}]}};
+    const update={update_id:1,message:{message_id:10,date:Math.floor(Date.now()/1000),from:{id:1,is_bot:false,first_name:'User'},chat:{id:1,type:'private' as const,first_name:'User'},text:'/income Bonus @ Card 1500.77',entities:[{type:'bot_command' as const,offset:0,length:7}]}};
     await bot.handleUpdate(update);await bot.handleUpdate(update);expect(await db.income.total(1,day,day)).toBe(150077);
-    await bot.handleUpdate({update_id:2,channel_post:{message_id:1,date:Math.floor(Date.now()/1000),chat:{id:-1001,type:'channel',title:'Expenses'},text:'income:Gift | 2000'}});
+    await bot.handleUpdate({update_id:2,channel_post:{message_id:1,date:Math.floor(Date.now()/1000),chat:{id:-1001,type:'channel',title:'Expenses'},text:'income:Gift @ Card | 2000'}});
     expect(await db.income.total(1,day,day)).toBe(350077);
   });
   it('leaves the chosen budget unchanged and keeps opening savings out of cash flow',async()=>{
@@ -73,7 +74,7 @@ describe('dashboard data and actions',()=>{
   it('deduplicates dashboard income, expense and savings writes',async()=>{
     const {db,d1,day,goal}=await fixture();
     for(const action of ['add-income','add-expense','save']){
-      const input={action,label:'extra',amount:'150',day,categoryId:null,id:goal.id,requestId:requestId()};
+      const input={action,accountId:1,label:'extra',amount:'150',day,categoryId:null,id:goal.id,requestId:requestId()};
       await dashboardAction(db,d1,1,'Asia/Yerevan',input);await dashboardAction(db,d1,1,'Asia/Yerevan',input);
     }
     expect((await db.income.list(1,day,day)).filter(r=>r.source==='extra')).toHaveLength(1);
@@ -90,7 +91,7 @@ describe('dashboard data and actions',()=>{
   });
   it('edits manual records with conflict detection and prevents cross-account changes',async()=>{
     const {db,d1,day}=await fixture();await db.income.add(1,'Bonus',10000,day,'bonus');const row=(await db.income.list(1,day,day))[0]!;
-    const edit={action:'edit',kind:'income',id:row.id,label:'Bonus corrected',amount:'200.77',day,expected:{label:'Bonus',amountMinor:10000,day},requestId:requestId()};
+    const edit={action:'edit',accountId:1,kind:'income',id:row.id,label:'Bonus corrected',amount:'200.77',day,expected:{label:'Bonus',amountMinor:10000,day},requestId:requestId()};
     await dashboardAction(db,d1,1,'Asia/Yerevan',edit);expect(await db.income.total(1,day,day)).toBe(20077);
     await expect(dashboardAction(db,d1,1,'Asia/Yerevan',edit)).rejects.toThrow('changed');
     await expect(dashboardAction(db,d1,2,'Asia/Yerevan',edit)).rejects.toThrow();

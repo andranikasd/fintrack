@@ -16,7 +16,7 @@ describe('native Telegram financial replies', () => {
     bot.api.config.use(async(_next,method,payload)=>{calls.push({method,payload});return {ok:true,result:true} as never;});
     let id=0;
     const send=async(text:string)=>bot.handleUpdate({update_id:++id,message:{message_id:id,date:Math.floor(Date.now()/1000),from:{id:1,is_bot:false,first_name:'Owner'},chat:{id:1,type:'private',first_name:'Owner'},text,...(text.startsWith('/')?{entities:[{type:'bot_command' as const,offset:0,length:text.split(' ')[0]!.length}]}:{})}});
-    for(const command of ['/accounts','/income','/today','/week','/month','/stats','/last','/goal']) {
+    for(const command of ['/accounts','/incomes','/today','/week','/month','/stats','/last','/goal']) {
       calls.length=0;await send(command);
       const report=calls.find(c=>c.method==='sendRichMessage');
       expect(report,command).toBeDefined();

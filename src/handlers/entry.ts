@@ -1,6 +1,7 @@
+import { correctionKeyboard } from './guided-entry';
 import { reportTable } from '../lib/rich-report';
 import { promptCategory } from './category-review';
-import { appendChannelExpense } from '../lib/channel-table';
+import { appendChannelExpense, validateExpenseRow } from '../lib/channel-table';
 import { handleChannelPost } from './channel';
 import { Composer, InlineKeyboard } from 'grammy';
 import type { AppContext } from '../context';
@@ -52,30 +53,32 @@ function accountKeyboard(accounts: Array<{id:number;name:string;balance_minor?:n
   return kb;
 }
 
-async function addToChannel(ctx: AppContext, parsed: {amount:number; rest:string; spentOn:string;event?:string}, accountId: number): Promise<void> {
+export async function addToChannel(ctx: AppContext, parsed: {amount:number; rest:string; spentOn:string;event?:string}, accountId: number, chosenCategory?:number|null): Promise<boolean> {
   const account = await ctx.db.accounts.get(ctx.userId, accountId);
-  if (!account || account.archived) { await ctx.reply('That account is unavailable. Use /accounts and try again.'); return; }
+  if (!account || account.archived) { await ctx.reply('That account is unavailable. Use /accounts and try again.'); return false; }
   await ctx.db.accounts.assertCanSpend(ctx.userId,accountId,parsed.amount*100,parsed.spentOn);
   const channels=await ctx.db.finance.channels(ctx.userId);
-  if(channels.length>1) { await ctx.reply('More than one channel is linked. Keep one linked channel for /add so the destination is unambiguous.'); return; }
+  if(channels.length>1) { await ctx.reply('More than one channel is linked. Keep one linked channel for /add so the destination is unambiguous.'); return false; }
   const linked = channels[0];
-  if (!linked) { await ctx.reply('Link a finance channel first with /linkchannel.'); return; }
+  if (!linked) { await ctx.reply('Link a finance channel first with /linkchannel.'); return false; }
   const raw = accountEntry(parsed.rest);
   const label = raw.label.trim();
-  if (!label) { await ctx.reply('Add an item name, for example /add metro 150.'); return; }
+  if (!label) { await ctx.reply('Add an item name, for example /add metro 150.'); return false; }
   const categories = await ctx.db.categories(ctx.userId);
   const matched = matchCategory(label, categories);
   const item = matched.note ? `${matched.category?.name ?? ''} ${matched.note}`.trim() : label;
   const suffix = ` @ ${account.name}`;
+  validateExpenseRow(item+suffix,parsed.amount,ctx.tz);
   const event=parsed.event ?? `add:${ctx.userId}:${ctx.message!.message_id}`;
   // Recover the channel lock after a crashed request; never replay that request.
   await ctx.env.DB.prepare("UPDATE channel_add_requests SET status='uncertain' WHERE chat_id=? AND status='pending' AND started_at<unixepoch()-600").bind(linked.chat_id).run();
   let claimed;
   try { claimed=await ctx.env.DB.prepare("INSERT INTO channel_add_requests(event_key,user_id,chat_id,status) VALUES(?,?,?,'pending') ON CONFLICT(event_key) DO NOTHING").bind(event,ctx.userId,linked.chat_id).run(); }
-  catch(error) { if(error instanceof Error && /UNIQUE/.test(error.message)) { await ctx.reply('Another /add is still updating this channel. Try again after it finishes.'); return; } throw error; }
-  if(!claimed.meta.changes) { await ctx.reply('This /add request was already handled or attempted. Check the channel and /syncstatus before sending a new command.'); return; }
+  catch(error) { if(error instanceof Error && /UNIQUE/.test(error.message)) { await ctx.reply('Another /add is still updating this channel. Try again after it finishes.'); return false; } throw error; }
+  if(!claimed.meta.changes) { await ctx.reply('This /add request was already handled or attempted. Check the channel and /syncstatus before sending a new command.'); return false; }
   let completed=false;
   let categoryTxId: number | null = null;
+  let addedTxId: number | null = null;
   try {
   const post = await ctx.db.finance.latestPostForDay(ctx.userId, parsed.spentOn, linked.chat_id);
   async function importSent(message: import('grammy/types').Message) {
@@ -83,7 +86,12 @@ async function addToChannel(ctx: AppContext, parsed: {amount:number; rest:string
     await handleChannelPost(ctx,ctx.db,new Set([ctx.userId]),ctx.sign,message);
     const status=await ctx.db.finance.post(message.chat.id,message.message_id);
     if(!status || status.error) throw new Error(status?.error || 'Channel message was sent but could not be imported. Edit it to retry.');
-    categoryTxId = await ctx.env.DB.prepare('SELECT id FROM transactions WHERE user_id=? AND source_chat=? AND source_message=? AND category_id IS NULL AND note=? AND amount=? AND account_id=? ORDER BY id DESC LIMIT 1').bind(ctx.userId,message.chat.id,message.message_id,item,parsed.amount,accountId).first<number>('id');
+    addedTxId = await ctx.env.DB.prepare('SELECT id FROM transactions WHERE user_id=? AND source_chat=? AND source_message=? AND note=? AND amount=? AND account_id=? ORDER BY id DESC LIMIT 1').bind(ctx.userId,message.chat.id,message.message_id,item,parsed.amount,accountId).first<number>('id');
+    if(addedTxId && chosenCategory!==undefined){
+      if(chosenCategory!==null)await ctx.db.finance.alias(ctx.userId,item,chosenCategory);
+      await ctx.db.setTransactionCategory(ctx.userId,addedTxId,chosenCategory);
+    }
+    if(addedTxId && !(await ctx.db.transaction(ctx.userId,addedTxId))?.category_id)categoryTxId=addedTxId;
     await ctx.env.DB.prepare('UPDATE channel_posts SET bot_managed=1 WHERE user_id=? AND chat_id=? AND message_id=?').bind(ctx.userId,message.chat.id,message.message_id).run();
   }
   async function addedReceipt() {
@@ -91,7 +99,7 @@ async function addToChannel(ctx: AppContext, parsed: {amount:number; rest:string
       {type:'heading',size:3,text:'Added to your diary'},
       reportTable(['Item','Amount'],[[item,money(parsed.amount,ctx.sign)]]),
       {type:'footer',text:`${account!.name} · ${parsed.spentOn}`},
-    ]});
+    ]},{reply_markup:addedTxId?correctionKeyboard('expense',addedTxId):undefined});
   }
   if (post) {
     if(!post.content) throw new Error('Edit the original channel post once so the bot can preserve its formatting, then use /add again.');
@@ -112,7 +120,10 @@ async function addToChannel(ctx: AppContext, parsed: {amount:number; rest:string
   }
   completed=true;
   await ctx.db.clearState(ctx.userId);
-  if (categoryTxId !== null) await promptCategory(ctx, categoryTxId);
+  if (categoryTxId !== null && chosenCategory===undefined) await promptCategory(ctx, categoryTxId);
+  return true;
+  } catch(error) {
+    throw new Error('Channel update could not be confirmed. Check the channel and /syncstatus before retrying.',{cause:error});
   } finally {
     await ctx.env.DB.prepare('UPDATE channel_add_requests SET status=? WHERE event_key=? AND user_id=?').bind(completed?'done':'uncertain',event,ctx.userId).run();
   }
@@ -124,6 +135,8 @@ entry.command('add', async ctx => {
   const request=crypto.randomUUID().replaceAll('-','').slice(0,24);
   const raw = accountEntry(parsed.rest);
   const accounts = (await ctx.db.accounts.list(ctx.userId, parsed.spentOn)).filter(a=>!a.archived);
+  const suggested=await ctx.db.accounts.suggest(ctx.userId,'expense',accountEntry(parsed.rest).label);
+  accounts.sort((a,b)=>Number(b.id===suggested)-Number(a.id===suggested));
   if (!accounts.length) { await ctx.reply('Create an account first with /account Card 0, then use /add item amount @ Card.'); return; }
   const account = raw.accountName ? accounts.find(a=>a.name.toLowerCase()===raw.accountName!.toLowerCase()) : null;
   if (raw.accountName && !account) { await ctx.reply('Unknown account. Choose one:', {reply_markup:accountKeyboard(accounts,'addaccount',request)}); await ctx.db.setState(ctx.userId,'add_account',{request,amount:parsed.amount,rest:parsed.rest,spentOn:parsed.spentOn,event:`add:${ctx.userId}:${ctx.message!.message_id}`}); return; }
@@ -154,10 +167,10 @@ export function escapeHtml(s: string): string {
 }
 
 function afterKeyboard(txId: number, needsCategory: boolean): InlineKeyboard {
-  const kb = new InlineKeyboard();
+  const kb = correctionKeyboard('expense',txId).row();
   if (needsCategory) kb.text('🗂 Pick category', `pick:${txId}`).row();
   else kb.text('🗂 Change', `pick:${txId}`);
-  kb.text('🗑 Delete', `del:${txId}`);
+
   return kb;
 }
 
@@ -213,6 +226,8 @@ entry.on('message:text', async (ctx, next) => {
   const request=crypto.randomUUID().replaceAll('-','').slice(0,24);
   const accountHint = accountEntry(parsed.rest);
   const accounts = (await ctx.db.accounts.list(ctx.userId, parsed.spentOn)).filter(a=>!a.archived);
+  const suggested=await ctx.db.accounts.suggest(ctx.userId,'expense',accountEntry(parsed.rest).label);
+  accounts.sort((a,b)=>Number(b.id===suggested)-Number(a.id===suggested));
   const account = accountHint.accountName ? accounts.find(a=>a.name.toLowerCase()===accountHint.accountName!.toLowerCase()) : null;
   if (!accounts.length) { await ctx.reply('Create an account first: /account Card 100000.'); return; }
   if (!account) {
@@ -306,26 +321,27 @@ export async function undoLast(ctx: AppContext): Promise<void> {
 
 entry.command('undo', undoLast);
 
-entry.command('last', async (ctx) => {
-  const arg = Number((ctx.match as string).trim());
-  const limit = Number.isFinite(arg) && arg > 0 ? Math.min(arg, 20) : 10;
+export async function sendRecent(ctx:AppContext,limit=10):Promise<void>{
   const rows = await ctx.db.recentTransactions(ctx.userId, limit);
   if (rows.length === 0) {
-    await ctx.reply('No expenses yet.');
+    await ctx.reply('No expenses yet. Add your first purchase or view income receipts.',{reply_markup:new InlineKeyboard().text('Add expense','new:expense').text('Income receipts','income:recent')});
     return;
   }
   const today = todayIn(ctx.tz);
   const kb = new InlineKeyboard();
   rows.forEach((tx, i) => {
-    kb.text(`🗑 ${money(tx.amount, ctx.sign)}`, `del:${tx.id}`);
+    kb.text(`Edit ${tx.note||tx.category_name||'expense'} · ${money(tx.amount,ctx.sign)}`.slice(0,60),`correct:expense:${tx.id}:review`);
     if ((i + 1) % 2 === 0) kb.row();
   });
-  await ctx.api.sendRichMessage(ctx.chat.id,{blocks:[
+  kb.row().text('Income receipts','income:recent').text('Add expense','new:expense');
+  await ctx.api.sendRichMessage(ctx.chat!.id,{blocks:[
     {type:'heading',size:2,text:`Last ${rows.length} expenses`},
     reportTable(['Date','Item / category','Amount'],rows.map(tx=>[
       tx.spent_on===today?'Today':prettyDate(tx.spent_on),
       [tx.note,tx.category_name||'Uncategorized'].filter(Boolean).join(' · '),money(tx.amount,ctx.sign),
     ])),
-    {type:'footer',text:'Use the buttons to remove a manual expense. Edit channel expenses in their source table.'},
+    {type:'footer',text:'Choose an entry to review, edit or undo it. Channel expense changes update the source table.'},
   ]},{reply_markup:kb});
-});
+}
+entry.command('last',async ctx=>{const n=Number(ctx.match.trim());await sendRecent(ctx,Number.isInteger(n)&&n>0?Math.min(n,20):10);});
+entry.callbackQuery('expense:recent',async ctx=>{await ctx.answerCallbackQuery();await sendRecent(ctx);});

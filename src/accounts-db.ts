@@ -32,6 +32,19 @@ export class AccountsDb {
     const available=Math.min(atDay,later?.balance??atDay);
     if(amountMinor>available) throw new Error(`Insufficient funds in ${account.name}. Available for this date: ${(Math.max(0,available)/100).toLocaleString('en-US')} AMD. Choose another account or correct the amount.`);
   }
+  /** Suggest an owned active account from recorded history; never book a choice automatically. */
+  async suggest(user:number,kind:'expense'|'income'|'saving'|'withdrawal',label:string,categoryId:number|null=null):Promise<number|null> {
+    const table=kind==='expense'?'transactions':kind==='income'?'income':'savings';
+    const name=kind==='expense'?'t.note':kind==='income'?'t.source':'g.name';
+    const join=table==='savings'?'JOIN goals g ON g.id=t.goal_id':'';
+    const sign=kind==='saving'?'AND t.amount_minor>0':kind==='withdrawal'?'AND t.amount_minor<0':'';
+    const category=kind==='expense'?'OR t.category_id=?':'';
+    const row=await this.db.prepare(`SELECT t.account_id FROM ${table} t JOIN accounts a ON a.id=t.account_id AND a.user_id=t.user_id ${join}
+      WHERE t.user_id=? AND a.archived=0 ${sign} AND (lower(trim(${name}))=lower(trim(?)) ${category})
+      ORDER BY CASE WHEN lower(trim(${name}))=lower(trim(?)) THEN 0 ELSE 1 END,t.id DESC LIMIT 1`)
+      .bind(user,label,...(kind==='expense'?[categoryId]:[]),label).first<{account_id:number}>();
+    return row?.account_id??null;
+  }
   async get(user:number,id:number) { return this.db.prepare('SELECT * FROM accounts WHERE user_id=? AND id=?').bind(user,id).first<Account>(); }
   async create(user:number,name:string,openingMinor:number,openingOn:string,eventKey:string) {
     return (await this.db.prepare('INSERT OR IGNORE INTO accounts(user_id,name,opening_minor,opening_on,event_key) VALUES(?,?,?,?,?)').bind(user,name,openingMinor,openingOn,eventKey).run()).meta.changes === 1;

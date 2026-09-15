@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { appendChannelExpense } from '../src/lib/channel-table';
+import { appendChannelExpense, changeChannelExpense } from '../src/lib/channel-table';
 import { parseDailyPost } from '../src/lib/daily-post';
 const date=Date.parse('2026-09-15T08:00:00Z')/1000;
 const tz='Asia/Yerevan';
@@ -53,5 +53,36 @@ describe('editing human-authored channel tables',()=>{
     const source={date,caption:'Item | price\ncoffee @ Card | 200\nTotal: 200'};
     expect(appendChannelExpense(source,tz,'metro @ Card',150).caption).toBe(true);
     expect(()=>appendChannelExpense(source,tz,'bad | item',150)).toThrow('pipe characters');
+  });
+});
+
+describe('correcting and removing source expenses',()=>{
+  it('edits the selected duplicate row and preserves rich wrappers, transfers and totals',()=>{
+    const source={date,rich_message:{blocks:[{type:'table',is_bordered:true,cells:[
+      [{text:'Item',is_header:true},{text:'price',is_header:true}],
+      [{text:{type:'italic',text:'Coffee @ Card'}},{text:{type:'bold',text:'200'},align:'right'}],
+      [{text:'save:Laptop @ Card'},{text:'50.77'}],
+      [{text:'Coffee @ Card'},{text:'200'}],
+      [{text:'income:Salary @ Card'},{text:'500'}],
+      [{text:'Total'},{text:{type:'bold',text:'400'}}],
+    ]}]}};
+    const before=structuredClone(source);
+    const result=changeChannelExpense(source,tz,0,{label:'Coffee @ Cash',amount:150});
+    const rows=(result.rich!.blocks![0] as any).cells;
+    expect(rows[1]).toEqual([{text:{type:'italic',text:'Coffee @ Cash'}},{text:{type:'bold',text:'150'},align:'right'}]);
+    expect(rows[2]).toEqual((source.rich_message.blocks[0] as any).cells[2]);
+    expect(rows[3][1].text).toBe('200');expect(rows[5][1].text).toEqual({type:'bold',text:'350'});
+    expect(parseDailyPost({date,rich_message:result.rich},tz).warning).toBeNull();
+    const removed=changeChannelExpense(source,tz,1,null);
+    const parsed=parseDailyPost({date,rich_message:removed.rich},tz);
+    expect(parsed.rows.filter(r=>r.kind==='expense')).toHaveLength(1);expect(parsed.warning).toBeNull();
+    expect(source).toEqual(before);
+  });
+  it('preserves caption entities and updates totals after removing a row',()=>{
+    const caption='Sep 15\n| Item | price |\n| Coffee @ Card | 200 |\n| Metro @ Card | 150 |\nTotal: 350 AMD';
+    const result=changeChannelExpense({date,caption,caption_entities:[{type:'bold',offset:0,length:6},{type:'bold',offset:caption.indexOf('Total:'),length:14}]},tz,0,null);
+    expect(result.caption).toBe(true);expect(result.text).not.toContain('Coffee');expect(result.text).toContain('Metro @ Card');expect(result.text).toContain('Total: 150 AMD');
+    expect(result.entities![1]!.offset).toBe(result.text!.indexOf('Total:'));
+    expect(parseDailyPost({date,text:result.text},tz).warning).toBeNull();
   });
 });

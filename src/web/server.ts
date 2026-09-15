@@ -3,8 +3,7 @@ import type { Env } from '../types';
 import { Db } from '../db';
 import { DashboardAuth } from './auth';
 import { dashboardData } from './data';
-import { dashboardAction, ActionError } from './actions';
-import { renderDashboard } from './render';
+import { ActionError } from './actions';
 import { monthOf, monthStart, todayIn } from '../lib/dates';
 
 async function body(request: IncomingMessage, limit=16384): Promise<Record<string,unknown>> {
@@ -43,7 +42,7 @@ export function createDashboardHandler(env: Env) {
     try {
       if (!origin) { json(404,{error:'Dashboard is not configured.'});return; }
       if (request.method==='GET' && (path.pathname==='/'||path.pathname==='/dashboard')) {
-        response.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});response.end(renderDashboard(null,true));return;
+        response.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});response.end('<!doctype html><html><head><meta name=viewport content="width=device-width,initial-scale=1"><title>FinTrack reports</title></head><body><h1>FinTrack reports</h1><p>Send /dashboard in your Telegram chat to export a private, interactive HTML report.</p><p>Use /add or /income in Telegram to record activity.</p></body></html>');return;
       }
       if (request.method==='POST' && request.headers.origin!==origin) throw new ActionError('Open the dashboard from its configured address.',403);
       if (request.method==='POST' && path.pathname==='/api/session') {
@@ -73,9 +72,7 @@ export function createDashboardHandler(env: Env) {
         response.writeHead(200,{'Content-Type':item.mime,'Content-Disposition':"attachment; filename*=UTF-8''"+encodeURIComponent(item.name)});response.end(Buffer.from(item.data,'base64'));return;
       }
       if (request.method==='POST'&&(path.pathname==='/api/action'||path.pathname==='/api/attachment')) {
-        const input=await body(request,path.pathname==='/api/attachment'?1200000:16384);
-        if(path.pathname==='/api/attachment'&&input.action!=='attachment-add')throw new ActionError('Invalid attachment action.');
-        const result=await dashboardAction(db,env.DB,user,tz,input);json(200,{ok:true,result});return;
+        throw new ActionError('Reports are read-only. Use /add, /income or /new in Telegram to record or correct activity.',405);
       }
       json(404,{error:'Not found.'});
     } catch(error) {

@@ -1,3 +1,4 @@
+import { guidedEntry } from './handlers/guided-entry';
 import { cleanup } from './handlers/cleanup';
 import { dashboard } from './handlers/dashboard';
 import { income } from './handlers/income';
@@ -6,7 +7,7 @@ import type { BackgroundWork } from './database';
 import { channelCommands, handleChannelPost } from './handlers/channel';
 import { goals } from './handlers/goals';
 import { daily } from './handlers/daily';
-import { Bot, type BotConfig } from 'grammy';
+import { Bot, InlineKeyboard, type BotConfig } from 'grammy';
 import type { UserFromGetMe } from 'grammy/types';
 import type { AppContext } from './context';
 import { Db } from './db';
@@ -21,11 +22,13 @@ import { stats } from './handlers/stats';
 import type { Env } from './types';
 
 export const COMMANDS = [
-  { command: 'add', description: 'Add spending to the channel table' },
-  { command: 'dashboard', description: 'Interactive charts and money management' },
+  { command: 'add', description: 'Record an expense step by step' },
+  { command: 'new', description: 'Guided expense, income or savings entry' },
+  { command: 'incomes', description: 'View income sources and recent receipts' },
+  { command: 'dashboard', description: 'Export an interactive report' },
   { command: 'account', description: 'Create an account with an opening balance' },
   { command: 'accounts', description: 'View recorded account balances' },
-  { command: 'income', description: 'Record income and view sources' },
+  { command: 'income', description: 'Record income step by step' },
   { command: 'uncategorized', description: 'Assign categories to unknown items' },
   { command: 'today', description: 'Today spending and savings' },
   { command: 'yesterday', description: 'Yesterday spending and savings' },
@@ -93,7 +96,7 @@ export function createBot(env: Env, exec: BackgroundWork): Bot<AppContext> {
     catch(error) {
       console.error('Private update failed',error);
       await ctx.reply(error instanceof Error && /account|Insufficient funds|positive|ledger|Telegram|channel message/i.test(error.message)
-        ? error.message : 'Could not complete this request. Check /last, /goal or /syncstatus before retrying.');
+        ? error.message : 'Could not complete this request. Check /last, /goal or /syncstatus before retrying.',{reply_markup:new InlineKeyboard().text('Check recent activity','entry:check').row().text('Guided entry','entry:new')});
     }
   });
 
@@ -101,13 +104,14 @@ export function createBot(env: Env, exec: BackgroundWork): Bot<AppContext> {
   // "send me the new name" cannot be picked up half an hour later.
   bot.use(async (ctx, next) => {
     const text = ctx.message?.text;
-    if (text && (text.startsWith('/') || /^(📊|📈|🗂|🎯|📄|↩️)/u.test(text))) {
+    if (text && (text.startsWith('/') || /^(📊|📈|🗂|🎯|📄|↩️|➕|💰|🧾|🏦)/u.test(text))) {
       await ctx.db.clearState(ctx.userId);
     }
     await next();
   });
 
   bot.use(cleanup);
+  bot.use(guidedEntry);
   bot.use(channelCommands);
   bot.use(goals);
   bot.use(dashboard);

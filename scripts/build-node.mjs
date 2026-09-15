@@ -4,6 +4,7 @@ await build({
   entryPoints: {
     main: 'src/runtime/main.ts',
     backup: 'src/runtime/backup-cli.ts',
+    'verify-backup': 'src/runtime/verify-backup-cli.ts',
   },
   outdir: 'dist',
   outExtension: { '.js': '.mjs' },

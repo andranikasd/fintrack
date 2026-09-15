@@ -247,6 +247,35 @@ uses your `/tz` timezone, normally within five minutes of the configured time.
 A failed notification is retried; an ambiguous network failure can resend a
 notification, but cannot duplicate a confirmed contribution.
 
+### Guided entry on your phone
+
+Send `/add` without arguments to choose a recent item or type a new one. Choose
+an account, enter the amount with the inline keypad (or type it), choose a category
+when needed, then review and save. The suggested account comes first, but you
+always choose it. Nothing is recorded before you save. Insufficient funds leave
+the draft open so you can change the amount or account. Each step shows your
+choices; **Back** keeps them. You can also start with `/add Coffee`.
+Type a previous item name to reuse its category, or select **New category** in
+the category step without leaving the draft.
+
+`/new` or **Add entry** offers expenses, income, savings deposits and withdrawals.
+`/income`, `/save` and `/withdraw` also start their guided flows without arguments.
+Expense amounts use whole AMD; income and savings support two decimal places.
+Confirmations offer **Edit amount**, **Change account** and **Undo entry** for
+expenses and manual income. Undo asks for confirmation. Channel expense corrections
+update the original table; channel income corrections still use the source table.
+When a channel is linked, guided expenses also update its daily table.
+Use **Recent** or `/last` to open an expense review. Manual entries can also
+change their name, date and category; a stale correction is rejected. The main
+keyboard provides direct expense, income, recent-entry and account buttons.
+
+All entry and correction happen in Telegram. Dashboard files are static exports;
+they allow local filtering and CSV downloads but cannot write to your ledger.
+The phone layout shows readable transaction rows. **Print / save PDF** prints
+the selected period, active filters, all matching ledger rows and detailed
+analysis, then restores your browsing view. The Export menu also includes the
+HTML report and Telegram summaries.
+
 ### Daily reports
 
 - `/today`, `/yesterday`: expenses, category totals, deposits and withdrawals.
@@ -254,10 +283,11 @@ notification, but cannot duplicate a confirmed contribution.
 - `/week`: seven days of spending and savings bars.
 - `/compare`: the last seven completed days versus the preceding seven, excluding today.
 - `/chart 30`: interactive HTML charts for income, expenses, savings and categories; 1–366 days.
-- `/dashboard`: live dashboard when configured; otherwise a 90-day HTML snapshot.
+- `/dashboard`: export a read-only 90-day HTML snapshot, with charts and filters.
 - `/chartpdf 30`: the previous PDF chart, for 1–90 days.
 - `/add metro 150 @ Card`: add spending to the linked channel table, creating or editing that day.
-- `/income Salary @ Card 450000`: record income; `/income` shows monthly income by source.
+- `/income`: guided income entry; `/incomes` shows monthly income by source.
+  `/income Salary @ Card 450000` remains available as a shortcut.
 - `/month`: spending, net savings and budget availability.
 - `/summary 21:00`: daily private report plus a seven-day interactive HTML chart.
 - `/export`: detailed financial PDF reports with account reconciliation, income,
@@ -290,7 +320,8 @@ adapter. They apply all migrations to an in-memory database and exercise native
 channel payloads, edit ordering, rollback, exact savings, reminders and reports.
 `WRITE_DAILY_PDF=/tmp/daily.pdf npm test` writes a sample chart for visual review.
 
-See [interactive charts and live dashboard setup](docs/vps.md#interactive-charts-income-and-the-live-dashboard) for income table rows, HTTPS setup and browser editing.
+See [interactive charts and guided entry](docs/vps.md#interactive-charts-income-and-guided-entry) for reports and income table rows.
+Use [backup verification](docs/vps.md#verify-a-backup-without-replacing-live-data) to test a saved SQLite snapshot.
 
 ## Account balances and cleanup
 

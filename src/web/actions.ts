@@ -106,10 +106,13 @@ export async function dashboardAction(db: Db, sql: Database, user: number, tz: s
     }
     case 'budget':
       await db.setBudget(user,0,amount(body.amount,true)/100); return;
-    case 'save': {
+    case 'save':
+    case 'withdraw': {
       const goal = (await db.finance.goals(user)).find(g=>g.id===id(body.id));
       if (!goal) throw new ActionError('Goal not found.',404);
-      await db.finance.contribute(user,goal.id,amount(body.amount),day,event,await account()); return;
+      const saved=await db.finance.contribute(user,goal.id,amount(body.amount)*(body.action==='withdraw'?-1:1),day,event,await account());
+      if(!saved && !await sql.prepare('SELECT id FROM savings WHERE user_id=? AND event_key=?').bind(user,event).first()) throw new ActionError('The withdrawal exceeds the saved balance.');
+      return;
     }
     case 'edit':
     case 'delete': {
@@ -121,14 +124,20 @@ export async function dashboardAction(db: Db, sql: Database, user: number, tz: s
       if (row.source_chat!==null) throw new ActionError('Edit the source channel table to change this amount or date. You can change its category here.');
       const amountColumn=body.kind==='expense'?'amount':'amount_minor', dateColumn=body.kind==='expense'?'spent_on':'received_on', nameColumn=body.kind==='expense'?'note':'source';
       const expected=body.expected as Record<string,unknown>|undefined;
-      if (!expected || expected.amountMinor!==Number(row[amountColumn])*(body.kind==='expense'?100:1) || expected.day!==row[dateColumn] || expected.label!==row[nameColumn] || expected.accountId!==row.account_id || (body.kind==='income'&&Boolean(expected.passive)!==Boolean(row.passive))) throw new ActionError('This record changed. Refresh and try again.',409);
-      const guard=`user_id=? AND id=? AND source_chat IS NULL AND ${amountColumn}=? AND ${dateColumn}=? AND ${nameColumn}=? AND account_id IS ?${body.kind==='income'?' AND passive=?':''}`;
-      const params=[user,recordId,row[amountColumn],row[dateColumn],row[nameColumn],row.account_id,...(body.kind==='income'?[row.passive]:[])];
+      if (!expected || expected.amountMinor!==Number(row[amountColumn])*(body.kind==='expense'?100:1) || expected.day!==row[dateColumn] || expected.label!==row[nameColumn] || expected.accountId!==row.account_id || (body.kind==='income'&&Boolean(expected.passive)!==Boolean(row.passive)) || (body.kind==='expense'&&expected.categoryId!==undefined&&expected.categoryId!==row.category_id)) throw new ActionError('This record changed. Refresh and try again.',409);
+      const guard=`user_id=? AND id=? AND source_chat IS NULL AND ${amountColumn}=? AND ${dateColumn}=? AND ${nameColumn}=? AND account_id IS ?${body.kind==='income'?' AND passive=?':' AND category_id IS ?'}`;
+      const params=[user,recordId,row[amountColumn],row[dateColumn],row[nameColumn],row.account_id,...(body.kind==='income'?[row.passive]:[row.category_id])];
       const accountId=body.action==='edit'?await account():null;
+      let categoryId=row.category_id;
+      if(body.action==='edit'&&body.kind==='expense'&&body.categoryId!==undefined){
+        const category=body.categoryId===null?null:await db.category(user,id(body.categoryId));
+        if(body.categoryId!==null&&(!category||category.archived))throw new ActionError('Choose an active category.');
+        categoryId=category?.id??null;
+      }
       const result=body.action==='delete'
         ? await sql.prepare(`DELETE FROM ${table} WHERE ${guard}`).bind(...params).run()
-        : await sql.prepare(`UPDATE ${table} SET ${amountColumn}=?,${dateColumn}=?,${nameColumn}=?,account_id=?${body.kind==='income'?',passive=?':''} WHERE ${guard}`)
-          .bind(amount(body.amount,body.kind==='expense')/(body.kind==='expense'?100:1),day,label(body.label),accountId,...(body.kind==='income'?[body.passive===true?1:0]:[]),...params).run();
+        : await sql.prepare(`UPDATE ${table} SET ${amountColumn}=?,${dateColumn}=?,${nameColumn}=?,account_id=?${body.kind==='income'?',passive=?':',category_id=?'} WHERE ${guard}`)
+          .bind(amount(body.amount,body.kind==='expense')/(body.kind==='expense'?100:1),day,body.kind==='expense'&&body.label===''&&row.note===''?'':label(body.label),accountId,...(body.kind==='income'?[body.passive===true?1:0]:[categoryId]),...params).run();
       if (!result.meta.changes) throw new ActionError('This record changed. Refresh and try again.',409);
       return;
     }

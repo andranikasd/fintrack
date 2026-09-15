@@ -2,9 +2,10 @@ import { InlineKeyboard, Keyboard } from 'grammy';
 import type { Category } from '../types';
 
 export const MAIN_MENU = new Keyboard()
-  .text('📊 Month').text('📈 Stats').row()
-  .text('🗂 Categories').text('🎯 Budget').row()
-  .text('📄 Export').text('↩️ Undo')
+  .text('➕ Expense').text('💰 Income').row()
+  .text('➕ Add entry').text('🧾 Recent').row()
+  .text('🏦 Accounts').text('📄 Export').row()
+  .text('🗂 Categories').text('🎯 Budget')
   .resized()
   .persistent();
 

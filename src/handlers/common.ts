@@ -6,8 +6,13 @@ export const common = new Composer<AppContext>();
 
 const HELP = `<b>FinTrack</b> — spending in one line.
 
-<b>Log an expense</b>
-Just type it:
+<b>Guided entry</b>
+/add — choose an item, account and amount using buttons and a keypad
+/income — record income step by step; /incomes shows recent receipts
+/save or /withdraw — choose a savings goal, account and amount
+/new — choose any entry type
+
+<b>Quick text entry (optional)</b>
 <code>1500 cafe latte</code>
 <code>cafe 1500</code>
 <code>2.5k transport</code>
@@ -25,7 +30,7 @@ No category in the text? The bot asks with one tap.
 /compare — two completed seven-day periods
 /chart 30 — interactive income, spending and savings charts
 /chartpdf 30 — PDF chart
-/dashboard — private live dashboard, or an offline HTML snapshot
+/dashboard — export a read-only interactive HTML report
 /account Card 100000 — create an account with an opening balance
 /accounts — recorded account balances
 /income Salary @ Card 450000 — record received income
@@ -59,7 +64,7 @@ When a budget hits 80%, 100%, 120%, 150% or 200%, the bot messages you once per 
 
 common.command('start', async (ctx) => {
   await ctx.reply(
-    `Hi 👋 Track spending by typing <code>1500 cafe latte</code>.\n\nSend /help for everything else.`,
+    `Hi 👋 Tap ➕ Add entry or send /add. Choose an item and account, then use the amount keypad. You can also type <code>1500 cafe latte</code>.\n\nSend /help for everything else.`,
     { parse_mode: 'HTML', reply_markup: MAIN_MENU },
   );
 });

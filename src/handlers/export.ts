@@ -1,3 +1,4 @@
+import { sendDashboard } from './dashboard';
 import { Composer, InlineKeyboard, InputFile } from 'grammy';
 import type { AppContext } from '../context';
 import { OVERALL, type Db } from '../db';
@@ -17,6 +18,8 @@ export const exportData = new Composer<AppContext>();
 
 const MENU = (period: string): InlineKeyboard =>
   new InlineKeyboard()
+    .text('Interactive HTML report','export:html').row()
+    .text('Monthly summary','reports:month').text('Spending trends','reports:stats').row()
     .text('📄 This month', `export:pdf:${period}`)
     .text('📄 Last month', `export:pdf:${shiftMonth(period, -1)}`)
     .row()
@@ -27,10 +30,11 @@ const MENU = (period: string): InlineKeyboard =>
 
 export async function sendExportMenu(ctx: AppContext): Promise<void> {
   const period = monthOf(todayIn(ctx.tz));
-  await ctx.reply('What should I build?', { reply_markup: MENU(period) });
+  await ctx.reply('Choose a report. HTML lets you explore and filter; PDF is ready to share; CSV contains expense rows.', { reply_markup: MENU(period) });
 }
 
 exportData.command('export', sendExportMenu);
+exportData.callbackQuery('export:html',async ctx=>{await ctx.answerCallbackQuery({text:'Building your report…'});await sendDashboard(ctx);});
 
 exportData.callbackQuery(/^export:pdf:(\d{4}-\d{2})$/, async (ctx) => {
   const period = ctx.match[1]!;

@@ -151,6 +151,25 @@ applies any pending migrations when it starts again.
 `docker compose down` keeps the named volumes. `docker compose down -v` deletes
 both your live data and backups; use it only when intentionally erasing the bot.
 
+### Verify a backup without replacing live data
+
+Build once, then run the verifier on a completed SQLite backup:
+
+```bash
+npm run build:node
+npm run backup:verify -- /path/to/fintrack-YYYY-MM-DD.sqlite
+```
+
+In the production container, use `node dist/verify-backup.mjs` with the backup
+path. The verifier copies the snapshot into a temporary directory, runs SQLite
+integrity and foreign-key checks, applies any pending migrations to that copy,
+counts records, and reopens it to verify restart integrity. It prints a content
+digest and the number of accounts with historical deficits, without printing
+financial records. It removes the temporary restore on completion. The backup
+and live database are never opened for modification. Use a completed backup,
+not a live WAL database file. A successful check proves this snapshot can be
+opened and migrated; it does not prove the snapshot includes later transactions.
+
 ## Development verification
 
 ```bash
@@ -167,16 +186,16 @@ mock with dummy credentials. It checks migrations, channel ingestion, goal preci
 PDF generation/upload, live backup, non-root execution, health, graceful restart and
 persistence. It never loads the real `.env` or contacts your Telegram bot.
 
-## Interactive charts, income and the live dashboard
+## Interactive charts, income and guided entry
 
 After updating with `docker compose up -d --build`, `/chart 30` sends an interactive
-HTML report if no dashboard URL is configured. Open the file in a browser; it
+HTML report, including when a dashboard URL is configured. Open the file in a browser; it
 includes its own charts, styling and data, so it works offline without a chart
 service or CDN. Choose dates within the snapshot, toggle chart series, group by
 day/week/month, click bars to explore a period, filter categories and sources,
 search the ledger, and download the filtered rows as CSV.
 
-`/dashboard html` always generates an offline snapshot of the last 90 days.
+`/dashboard` always generates an offline snapshot of the last 90 days.
 `/chartpdf 30` keeps the previous downloadable PDF chart. Evening summaries now
 attach an interactive seven-day HTML report.
 
@@ -199,75 +218,28 @@ save:laptop | 5500.77
 ```
 
 Income rows participate in the same atomic post-edit syncing as expenses and
-savings. They never increase expense totals. `/income` shows this month's sources
-and removal buttons for manually recorded income. Correct a channel income by
-editing its source table; correct a manual one in the live dashboard or remove it
-and record the replacement. Income supports two decimal places.
+savings. They never increase expense totals. `/income` starts guided entry and
+`/incomes` shows this month's sources and correction buttons for manual income.
+Correct channel income in its source table. Income supports two decimal places.
 
 The dashboard shows income received, spending, savings deposits, withdrawals and
 **net cash flow after savings**. This is a period's recorded movement, not your
 bank balance: no opening cash balance or bank connection is assumed. The chosen
 spending budget stays unchanged when income is recorded.
 
-### Live dashboard with automatic HTTPS
+### Telegram entry and static reports
 
-For a dashboard that can change saved records, point a DNS name at the VPS and set:
+Use `/add`, `/income`, `/save` or `/withdraw` without arguments for guided entry.
+Choose a recent item/source or type a name, choose an account, use the number
+keypad or type the amount, and review before saving. `/new` opens the entry menu.
+Errors retain the draft. Corrections use the buttons on receipts or recent entries.
+If a channel write has an uncertain result, inspect `/syncstatus` and the source
+before starting another request; the bot does not blindly replay that write.
 
-```dotenv
-DASHBOARD_HOST=fintrack.your-domain.com
-```
-
-Then enable the included Caddy reverse proxy:
-
-```bash
-docker compose -f compose.yaml -f compose.dashboard.yaml up -d --build
-```
-
-Allow inbound TCP ports 80 and 443. Caddy obtains and renews the HTTPS certificate;
-its certificate data is stored in named volumes. Send `/dashboard` or `/chart 30`
-to your bot to receive a private sign-in link. The link is single-use and expires
-in 10 minutes; the browser session expires after 24 hours. Only accounts in
-`ALLOWED_USER_IDS` can sign in, and each sees their own records. Use **Sign out** to
-revoke the current session. The bot token is never sent to the browser.
-
-Use the same two `-f` options for future updates, logs and shutdown commands so the
-HTTPS proxy remains part of the deployment.
-
-If you already have an HTTPS reverse proxy on the VPS, set
-`DASHBOARD_URL=https://fintrack.your-domain.com` instead and publish only a loopback
-port with:
-
-```bash
-docker compose -f compose.yaml -f compose.dashboard-local.yaml up -d --build
-```
-
-Proxy that hostname to `http://127.0.0.1:8080`. Set `DASHBOARD_PORT` if port 8080 is
-already used. Plain HTTP dashboard URLs are accepted only for `localhost` and
-`127.0.0.1`, for local testing or SSH tunnels. The base Compose file still publishes
-no host ports.
-
-### Changes you can make in the browser
-
-- Add income or expenses, and edit/remove manually entered income and expenses.
-- Assign categories to imported items; matching channel names are remembered.
-- Create a category, set the monthly budget, and confirm a savings contribution.
-- Navigate charts and filter/export the ledger without changing recorded data.
-
-Channel amounts/dates remain controlled by the original daily table. Keeping that
-single source prevents the next table edit from silently undoing a browser change.
-Goal setup, category rename/archive, reminder preferences, and savings withdrawals
-remain available through the Telegram commands. The offline HTML snapshot offers
-filtering and navigation; it cannot write to the database.
-
-Migrations `0003_income.sql` and `0004_dashboard.sql` are additive and run at startup.
-Daily backups include income and dashboard sessions. Restoring a recent backup can
-restore sessions that were valid at that snapshot; to revoke every dashboard link
-and session after a restore:
-
-```bash
-docker compose exec bot sqlite3 /data/fintrack.sqlite 'DELETE FROM dashboard_tokens;'
-```
-
+The dashboard is always a static export. No domain or HTTPS proxy is needed.
+Existing `DASHBOARD_URL` configuration does not change the bot's export behavior;
+browser write endpoints return HTTP 405. Existing tokens and read-only endpoints
+remain for compatibility. Old browser forms cannot modify records.
 
 ## Dashboard views and accounts
 
@@ -363,13 +335,14 @@ An expense account is optional; income needs one. An unknown receiving account
 causes a sync error and preserves the last valid version of that post. Correct
 its account name or create the account, then edit the post to retry. Edit source
 channel rows to change their account assignment, amount or date. Manual entries
-can be edited in the dashboard. Savings goals remain separate from account balances;
-recording a goal deposit does not debit an account. There are no account transfers.
+can be corrected from their Telegram receipts or recent-entry buttons. Savings
+deposits debit the selected account; withdrawals credit it. There are no direct
+account-to-account transfers.
 
 Standalone HTML reports include the views and local navigation but cannot save
 changes. Calendar drill-down is limited to the snapshot's records. Monthly totals
 are labeled partial when the snapshot does not cover the full comparison period.
-Use the live dashboard for account, plan and budget editing.
+Use Telegram commands for live entries, goal plans and budgets.
 
 ### Upgrade
 
@@ -406,7 +379,15 @@ spending per elapsed calendar day; it does not predict unrecorded future bills.
 Historical months display their actual total. An offline snapshot needs complete
 month-to-date coverage to show this chart.
 
-## Saved views, rules, history and monthly closing
+## Legacy browser workspace reference
+
+The controls described below belonged to the former live browser workspace.
+Browser writes are now disabled: these controls are not available in static
+exports. Existing history, rules, saved views, confirmations and attachments stay
+in the database and backups. The static report can display saved information.
+Use Telegram for current entry and correction workflows.
+
+### Saved views, rules, history and monthly closing
 
 Migration `0006_dashboard_workspace.sql` adds these features automatically when
 rebuilding/restarting with your existing Compose files. SQLite backups include

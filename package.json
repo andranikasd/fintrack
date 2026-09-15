@@ -16,7 +16,8 @@
     "build:node": "node scripts/build-node.mjs",
     "start": "node dist/main.mjs",
     "backup": "node dist/backup.mjs",
-    "test:docker": "node scripts/smoke-docker.mjs"
+    "test:docker": "node scripts/smoke-docker.mjs",
+    "backup:verify": "node dist/verify-backup.mjs"
   },
   "dependencies": {
     "@pdf-lib/fontkit": "^1.1.1",

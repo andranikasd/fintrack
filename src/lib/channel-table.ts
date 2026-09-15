@@ -31,9 +31,17 @@ function updateTotal(block:Block,total:number):boolean {
   return true;
 }
 
+/** Prevent an expense name from being interpreted as an income or savings command. */
+export function validateExpenseRow(label:string,amount:number,tz:string):void {
+  if(/[|\r\n]/.test(label))throw new Error('Use an item and account name without pipe characters or line breaks.');
+  const rows=parseDailyPost({date:Math.floor(Date.now()/1000),text:`Item | price\n${label} | ${amount}`},tz).rows;
+  if(rows.length!==1||rows[0]!.kind!=='expense'||rows[0]!.amountMinor!==amount*100)throw new Error('Choose an expense item name without reserved prefixes such as income:, save: or account:.');
+}
+
 /** Append to the actual source, preserving existing rows, formatting and order. */
 export function appendChannelExpense(source:SourcePost,tz:string,label:string,amount:number):{rich?:InputRichMessage;text?:string;entities?:MessageEntity[];caption?:boolean} {
   if(/[|\r\n]/.test(label))throw new Error('Use an item and account name without pipe characters or line breaks.');
+  validateExpenseRow(label,amount,tz);
   const parsed=parseDailyPost(source,tz);
   const total=parsed.rows.filter(r=>r.kind==='expense').reduce((sum,r)=>sum+r.amountMinor/100,amount);
   if(source.rich_message) {
@@ -83,6 +91,75 @@ export function appendChannelExpense(source:SourcePost,tz:string,label:string,am
       const nextEnd=end>=edit.end?end+delta:edit.start+edit.value.length;
       return {...entity,offset:nextStart,length:nextEnd-nextStart};
     }).filter(entity=>entity.length>0);
+    text=text.slice(0,edit.start)+edit.value+text.slice(edit.end);
+  }
+  parseDailyPost({text,date:source.date},tz);
+  return {text,entities,caption:source.text===undefined};
+}
+
+/** Change one expense by its position in the captured source, retaining surrounding formatting. */
+export function changeChannelExpense(source:SourcePost,tz:string,expenseIndex:number,next:{label:string;amount:number}|null):ReturnType<typeof appendChannelExpense> {
+  if(next && /[|\r\n]/.test(next.label))throw new Error('Use an item name without pipe characters or line breaks.');
+  if(next)validateExpenseRow(next.label,next.amount,tz);
+  const parsed=parseDailyPost(source,tz),expenses=parsed.rows.filter(r=>r.kind==='expense');
+  const old=expenses[expenseIndex];if(!old)throw new Error('This source row changed. Reopen the latest entry.');
+  const total=expenses.reduce((sum,r)=>sum+r.amountMinor/100,0)-old.amountMinor/100+(next?.amount??0);
+  let index=0,changed=false;
+  const isTarget=(line:string)=>{
+    try {const row=parseDailyPost({date:source.date,text:'Item | price\n'+line},tz).rows[0];
+      if(!row||row.kind!=='expense')return false;return index++===expenseIndex;
+    }catch{return false;}
+  };
+  const replacement=(line:string)=>{
+    if(!next)return '';
+    const match=/^(.*?)([\d,.]+[km]?)(\s*(?:֏|AMD)?\s*\|?\s*)$/i.exec(line);
+    const pipe=line.includes('|');
+    if(!match)throw new Error('Cannot safely edit this row. Open the source table.');
+    return pipe?(line.trimStart().startsWith('|')?`| ${next.label} | ${next.amount} |`:`${next.label} | ${next.amount}`):`${next.label} ${next.amount}`;
+  };
+  if(source.rich_message){
+    const rich=structuredClone(source.rich_message) as {blocks:Block[]};
+    for(const block of rich.blocks){
+      if(block.type==='table'){
+        const cells=block.cells as Block[][];
+        for(let i=0;i<cells.length;i++){
+          const row=cells[i]!;if(row.length!==2)continue;
+          if(!isTarget(row.map(c=>richText(c.text)).join(' | ')))continue;
+          if(next){
+            row[0]!.text=replaceRich(row[0]!.text,0,richText(row[0]!.text).length,next.label);
+            row[1]!.text=replaceRich(row[1]!.text,0,richText(row[1]!.text).length,String(next.amount));
+          }else cells.splice(i--,1);
+          changed=true;
+        }
+        for(const row of cells)if(/^(total)?$/i.test(richText(row[0]!.text).trim()))updateTotal(row[1]!,total);
+      }else if(block.text!==undefined){
+        const plain=richText(block.text),lines=plain.split('\n');let offset=0;
+        const edits:Array<{start:number;end:number;value:string}>=[];
+        for(const line of lines){if(isTarget(line)){edits.push({start:offset,end:offset+line.length,value:replacement(line)});changed=true;}offset+=line.length+1;}
+        for(const edit of edits.reverse())block.text=replaceRich(block.text,edit.start,edit.end,edit.value);
+        updateTotal(block,total);
+      }
+    }
+    if(!changed)throw new Error('Cannot locate the source row. Reopen the latest entry.');
+    parseDailyPost({...source,rich_message:rich},tz);
+    return {rich:rich as InputRichMessage};
+  }
+  let text=source.text??source.caption??'',entities=structuredClone(source.entities??source.caption_entities??[]),offset=0;
+  const edits:Array<{start:number;end:number;value:string}>=[];
+  for(const line of text.split('\n')){
+    if(isTarget(line)){edits.push({start:offset,end:offset+line.length,value:replacement(line)});changed=true;}
+    else {const match=totalPattern.exec(line);if(match)edits.push({start:offset+match[1]!.length,end:offset+match[1]!.length+match[2]!.length,value:String(total)});}
+    offset+=line.length+1;
+  }
+  if(!changed)throw new Error('Cannot locate the source row. Reopen the latest entry.');
+  for(const edit of edits.reverse()){
+    const delta=edit.value.length-(edit.end-edit.start);
+    entities=entities.map(entity=>{
+      const start=entity.offset,end=start+entity.length;
+      if(start>=edit.end)return {...entity,offset:start+delta};
+      if(end<=edit.start)return entity;
+      return {...entity,offset:Math.min(start,edit.start),length:(end>=edit.end?end+delta:edit.start+edit.value.length)-Math.min(start,edit.start)};
+    }).filter(e=>e.length>0);
     text=text.slice(0,edit.start)+edit.value+text.slice(edit.end);
   }
   parseDailyPost({text,date:source.date},tz);

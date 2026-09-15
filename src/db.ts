@@ -185,7 +185,7 @@ export class Db {
     return row!.id;
   }
 
-  async setTransactionCategory(userId: number, txId: number, categoryId: number): Promise<void> {
+  async setTransactionCategory(userId: number, txId: number, categoryId: number | null): Promise<void> {
     await this.d1
       .prepare('UPDATE transactions SET category_id = ? WHERE user_id = ? AND id = ?')
       .bind(categoryId, userId, txId)

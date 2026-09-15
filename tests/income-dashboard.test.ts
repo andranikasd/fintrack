@@ -139,7 +139,7 @@ describe('private dashboard sign-in',()=>{
     const empty=(await db.accounts.list(2,day))[0]!;
     const unfunded=await call('/api/action','POST',{...headers,origin,'content-type':'application/json'},
       {action:'add-expense',label:'coffee',amount:'1',day,accountId:empty.id,categoryId:null,requestId:requestId()});
-    expect(unfunded.status).toBe(400);expect(unfunded.data.error).toContain('Insufficient funds');
+    expect(unfunded.status).toBe(405);expect(unfunded.data.error).toContain('read-only');
     expect(await db.totalBetween(2,day,day)).toBe(0);
 
   });

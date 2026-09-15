@@ -1,5 +1,6 @@
+import type { Database } from './database';
 export interface Env {
-  DB: D1Database;
+  DB: Database;
   BOT_TOKEN: string;
   WEBHOOK_SECRET: string;
   DEFAULT_TZ: string;
@@ -19,6 +20,8 @@ export interface Category {
 }
 
 export interface Transaction {
+  source_chat?: number | null;
+  source_message?: number | null;
   id: number;
   user_id: number;
   category_id: number | null;

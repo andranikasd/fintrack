@@ -1,3 +1,4 @@
+import type { BackgroundWork } from './database';
 import type { Context } from 'grammy';
 import type { Db } from './db';
 import type { Env } from './types';
@@ -9,7 +10,7 @@ export interface AppContext extends Context {
   tz: string;
   /** Currency sign used in chat messages. */
   sign: string;
-  /** Worker execution context, for work that outlives the webhook response. */
-  exec: ExecutionContext;
+  /** Tracks report work during webhook responses or graceful container shutdown. */
+  exec: BackgroundWork;
   userId: number;
 }

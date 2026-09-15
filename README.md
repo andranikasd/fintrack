@@ -1,8 +1,23 @@
 # FinTrack
 
-A personal spending tracker that lives entirely in a Telegram chat and runs on a
-single Cloudflare Worker. Amounts are Armenian drams (֏), stored as whole
-numbers in D1.
+A personal spending tracker that lives in Telegram. Production can run entirely
+on your VPS using Docker Compose, Node.js and SQLite. Cloudflare Workers/D1 remains
+an alternative deployment. Expense amounts are whole Armenian drams (֏); savings
+support exact hundredths of a dram.
+
+## Production on your VPS
+
+```bash
+cp .env.example .env
+# Set BOT_TOKEN and ALLOWED_USER_IDS in .env
+docker compose up -d
+```
+
+The container includes all runtime dependencies, persistent SQLite storage,
+automatic migrations, scheduled reminders, PDF reports, health checks and daily
+backups. No Cloudflare account, domain or inbound port is required.
+
+See [VPS setup, updates and recovery](docs/vps.md) for the production guide.
 
 - **Logging an expense is one message**: `1500 cafe latte`
 - **Categories** you create, rename, archive or delete from the chat
@@ -26,7 +41,7 @@ then by unique prefix (`tra` → Transport).
 
 Commands: `/month` `/stats` `/last` `/cats` `/budget` `/export` `/undo` `/tz` `/help`.
 
-## Deploying
+## Cloudflare deployment (alternative)
 
 Prerequisites: a Cloudflare account, `npm`, and a bot token from
 [@BotFather](https://t.me/BotFather).
@@ -114,3 +129,141 @@ Points worth knowing before changing things:
   PDF writes `AMD` while chat messages use ֏.
 - **PDF building runs in `waitUntil`** after the webhook has already answered:
   Telegram retries an update that takes too long.
+
+## Channel diary and savings goals
+
+### Connect your daily table
+
+1. Open a private chat with the bot and send `/start`.
+2. Add the bot to your expense channel as an administrator.
+3. In the private bot chat, use `/linkchannel @channelname` or
+   `/linkchannel -1001234567890`. Both you and the bot must be channel admins.
+   Forward a channel post to the bot to discover a private channel's ID.
+4. Create or edit a channel post. Native Telegram two-column tables and plain
+   text/Markdown tables are supported:
+
+```text
+Sep 15
+Item | price
+metro | 150
+redline | 600
+duet | 150
+900
+```
+
+Each edit replaces the records belonging to that post, including removed rows,
+changed amounts and corrected dates. Retries and older revisions cannot double
+count or overwrite a newer revision. Multiple posts per day are added together.
+An empty table with its header removes all rows. An unreadable edit preserves the
+last valid records, notifies you privately, and appears in `/syncstatus`.
+Manual totals are checked against expense rows but never counted as expenses.
+Unknown items remain uncategorized. `/alias metro | Transport` teaches a category
+and updates matching imported items; category picks on imported rows also teach
+an alias. Commands and reports are used in the private bot chat.
+
+The date heading accepts `Sep 15`, `September 15 2026`, `2026-09-15`, `15.09`,
+`today`, or `yesterday`. Without a heading, the original post date in your timezone
+is used, even on later edits. Use a year for unambiguous historical dates.
+Expense values remain whole AMD; fractional expense rows are rejected rather than
+rounded. Savings values support two decimal places.
+
+**History and deletion:** channel history is not automatically fetched. Edit old
+posts after linking to import them. Deleting a channel message does not deliver a
+regular Bot API deletion update: use `/forgetpost CHANNEL_ID MESSAGE_ID` to remove
+its records. Edit the source table to delete individual imported expenses;
+`/undo` and transaction delete buttons cannot remove those rows independently.
+`/unlinkchannel ID` stops syncing and preserves recorded history. Editing a
+forgotten post again imports it again. Photos/screenshots and merged cells are
+not parsed; use the actual text/table message.
+
+### Budget and laptop goal
+
+These are example settings; choose your own amounts and deadline:
+
+```text
+/budget 150000
+/goal laptop | 960,381.77 | 2027-03-15 | 0 | 6000
+/funding shared 20000
+/remind 20:00
+/summary 21:00
+```
+
+Goal fields are `name | target | deadline OR daily:AMOUNT | already saved | optional daily cap`.
+Names may contain letters, numbers, spaces, underscores and hyphens. Repeating
+`/goal` with the same name updates the target and plan, preserving the original
+opening balance and contribution history. `/goalhelp` lists all examples.
+
+- A deadline calculates the required daily contribution, including today.
+- `daily:3000` estimates a completion date from your preferred daily contribution.
+- A daily cap and shared-budget headroom can lower the suggestion. Reports show
+  the required amount separately and flag a capped or overdue plan.
+- `/funding shared 20000` reserves 20,000 AMD for bills and subtracts confirmed net
+  savings from the monthly budget. Remaining headroom is spread over the remaining
+  calendar days and allocated proportionally across goals.
+- `/funding separate` (default) leaves savings outside the spending budget. Without
+  a shared budget, suggestions are goal-based arithmetic, not an affordability assessment.
+- The reserve is money for upcoming costs, not already recorded expenses. Adjust
+  it when those bills are paid to avoid reserving the same money twice.
+- Opening savings are a starting balance, not a deposit on the setup date.
+
+Record actual transfers with `/save laptop 5500` and `/withdraw laptop 2000`.
+Optionally append `YYYY-MM-DD` for past transfers. Or include rows in the daily
+channel table:
+
+```text
+save:laptop | 5500.77
+withdraw:laptop | 500
+```
+
+Savings rows sync on edits just like expenses. They are excluded from expense
+sums. Withdrawals and table edits that would make a goal's total balance negative
+are refused. Correct mistakes with source-table edits, or a compensating
+`/save`/`/withdraw` entry for a manually recorded transfer.
+
+Reminders offer **Saved it**, **Different amount**, and **Skip today**. Only
+confirmation books a transfer, and repeated taps cannot duplicate it. If the
+same day's savings change after a reminder was created, its confirmation is
+refused; use `/goal` for the refreshed plan and `/save` for any additional transfer.
+Record each transfer using one route: table, command, or reminder confirmation.
+Skipping changes no savings balance; the next day's plan recalculates.
+Notifications are opt-in: `/remind off` and `/summary off` disable them. Delivery
+uses your `/tz` timezone, normally within five minutes of the configured time.
+A failed notification is retried; an ambiguous network failure can resend a
+notification, but cannot duplicate a confirmed contribution.
+
+### Daily reports
+
+- `/today`, `/yesterday`: expenses, category totals, deposits and withdrawals.
+  Today also shows budget availability and goal progress.
+- `/week`: seven days of spending and savings bars.
+- `/compare`: the last seven completed days versus the preceding seven, excluding today.
+- `/chart 30`: a PDF with separate expense, savings and withdrawal bars; 1–90 days.
+- `/month`: spending, net savings and budget availability.
+- `/summary 21:00`: daily private report plus a seven-day PDF chart.
+- `/export`: existing expense PDF/CSV reports; these exports remain expense-only.
+
+Today is labeled incomplete. Empty dates mean no records, not confirmed zero
+spending. Charts exclude the opening savings balance.
+
+### Upgrade an existing Cloudflare installation
+
+Apply the additive database migration **before** deploying the new Worker:
+
+```bash
+npm run db:migrate
+npm run deploy
+npm run webhook:set
+```
+
+The webhook setup now enables `channel_post` and `edited_channel_post`, publishes
+the new command menu, and preserves pending updates. The Worker cron runs every
+five minutes; delivery records prevent repeated daily/monthly messages.
+Set the real D1 database ID and secrets as described above; the checked-in config
+contains a placeholder database ID. No remote database or bot settings are changed
+by running the tests. Rolling back the Worker code leaves old expense data usable;
+keep the additive schema and savings tables when rolling back.
+
+Development tests require Node 24 for the built-in SQLite
+adapter. They apply both migrations to an in-memory database and exercise native
+channel payloads, edit ordering, rollback, exact savings, reminders and reports.
+`WRITE_DAILY_PDF=/tmp/daily.pdf npm test` writes a sample chart for visual review.

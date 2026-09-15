@@ -1,3 +1,5 @@
+import type { Database, Statement } from './database';
+import { FinanceDb } from './finance-db';
 import type { Budget, Category, CategoryTotal, TxWithCategory } from './types';
 
 export const OVERALL = 0; // budgets.category_id sentinel for the whole month
@@ -16,10 +18,11 @@ const DEFAULT_CATEGORIES: Array<[string, string]> = [
 ];
 
 export class Db {
+  readonly finance: FinanceDb;
   constructor(
-    private readonly d1: D1Database,
+    private readonly d1: Database,
     private readonly defaultTz: string,
-  ) {}
+  ) { this.finance = new FinanceDb(d1); }
 
   async ensureUser(userId: number): Promise<string> {
     const existing = await this.d1
@@ -28,7 +31,7 @@ export class Db {
       .first<{ tz: string }>();
     if (existing) return existing.tz;
 
-    const statements: D1PreparedStatement[] = [
+    const statements: Statement[] = [
       this.d1.prepare('INSERT INTO users (id, tz) VALUES (?, ?)').bind(userId, this.defaultTz),
     ];
     DEFAULT_CATEGORIES.forEach(([name, emoji], i) => {
@@ -165,7 +168,7 @@ export class Db {
 
   async deleteTransaction(userId: number, txId: number): Promise<boolean> {
     const res = await this.d1
-      .prepare('DELETE FROM transactions WHERE user_id = ? AND id = ?')
+      .prepare('DELETE FROM transactions WHERE user_id = ? AND id = ? AND source_chat IS NULL')
       .bind(userId, txId)
       .run();
     return (res.meta.changes ?? 0) > 0;

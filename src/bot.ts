@@ -1,3 +1,7 @@
+import type { BackgroundWork } from './database';
+import { channelCommands, handleChannelPost } from './handlers/channel';
+import { goals } from './handlers/goals';
+import { daily } from './handlers/daily';
 import { Bot, type BotConfig } from 'grammy';
 import type { UserFromGetMe } from 'grammy/types';
 import type { AppContext } from './context';
@@ -13,6 +17,22 @@ import { stats } from './handlers/stats';
 import type { Env } from './types';
 
 export const COMMANDS = [
+  { command: 'today', description: 'Today spending and savings' },
+  { command: 'yesterday', description: 'Yesterday spending and savings' },
+  { command: 'week', description: 'Seven daily spending and savings bars' },
+  { command: 'compare', description: 'Compare two completed weeks' },
+  { command: 'chart', description: 'Daily spending and savings PDF' },
+  { command: 'goal', description: 'Savings goals and plans' },
+  { command: 'save', description: 'Confirm a savings contribution' },
+  { command: 'withdraw', description: 'Record a savings withdrawal' },
+  { command: 'funding', description: 'Shared or separate savings budget' },
+  { command: 'remind', description: 'Set daily savings reminder time' },
+  { command: 'summary', description: 'Set daily summary time' },
+  { command: 'linkchannel', description: 'Link an expense channel' },
+  { command: 'channels', description: 'List linked channels' },
+  { command: 'syncstatus', description: 'Check channel parsing errors' },
+  { command: 'alias', description: 'Teach an item category' },
+
   { command: 'month', description: 'This month by category' },
   { command: 'stats', description: 'Last 6 months' },
   { command: 'last', description: 'Recent expenses' },
@@ -33,7 +53,7 @@ function allowedIds(env: Env): Set<number> {
   );
 }
 
-export function createBot(env: Env, exec: ExecutionContext): Bot<AppContext> {
+export function createBot(env: Env, exec: BackgroundWork): Bot<AppContext> {
   const config: BotConfig<AppContext> = {};
   if (env.BOT_INFO) {
     config.botInfo = JSON.parse(env.BOT_INFO) as UserFromGetMe;
@@ -43,6 +63,8 @@ export function createBot(env: Env, exec: ExecutionContext): Bot<AppContext> {
   const db = new Db(env.DB, env.DEFAULT_TZ || 'Asia/Yerevan');
 
   bot.use(async (ctx, next) => {
+    if (await handleChannelPost(ctx, db, allowlist, env.CURRENCY_SIGN || '֏')) return;
+    if (ctx.chat?.type !== 'private') return;
     const from = ctx.from;
     if (!from || from.is_bot) return;
     if (allowlist.size > 0 && !allowlist.has(from.id)) {
@@ -68,6 +90,9 @@ export function createBot(env: Env, exec: ExecutionContext): Bot<AppContext> {
     await next();
   });
 
+  bot.use(channelCommands);
+  bot.use(goals);
+  bot.use(daily);
   bot.use(common);
   bot.use(menu);
   bot.use(categories);
@@ -79,6 +104,7 @@ export function createBot(env: Env, exec: ExecutionContext): Bot<AppContext> {
 
   bot.catch((err) => {
     console.error('bot error', err.error);
+    if (err.ctx.update.channel_post || err.ctx.update.edited_channel_post) throw err;
   });
 
   return bot;

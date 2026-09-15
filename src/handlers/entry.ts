@@ -4,6 +4,8 @@ import { OVERALL } from '../db';
 import { checkBudgets, paceLine } from '../lib/alerts';
 import { monthEnd, monthOf, monthStart, prettyDate, todayIn } from '../lib/dates';
 import { categoryKeyboard } from '../lib/keyboards';
+import { financialStatus } from '../lib/finance';
+import { minorMoney } from '../lib/savings';
 import { money } from '../lib/money';
 import { matchCategory, parseEntry } from '../lib/parse';
 import type { TxWithCategory } from '../types';
@@ -41,7 +43,8 @@ async function confirm(ctx: AppContext, txId: number, needsCategory: boolean): P
   const budget = (await ctx.db.budget(ctx.userId, OVERALL)) ?? 0;
 
   const lines = [txLine(tx, ctx.sign, today)];
-  const pace = paceLine(spent, budget, today, ctx.sign);
+  const status = await financialStatus(ctx.db,ctx.userId,today);
+  const pace = status.prefs.funding === 'shared' || status.prefs.reserve_minor>0 ? (status.available === null ? null : `Available after savings/reserve: ${minorMoney(status.available,ctx.sign)}`) : paceLine(spent, budget, today, ctx.sign);
   if (pace) lines.push(pace);
   else lines.push(`Month so far: <b>${money(spent, ctx.sign)}</b>`);
 
@@ -110,6 +113,7 @@ entry.callbackQuery(/^setcat:(\d+):(\d+)$/, async (ctx) => {
     return;
   }
   await ctx.db.setTransactionCategory(ctx.userId, txId, catId);
+  if (tx.source_chat != null) await ctx.db.finance.alias(ctx.userId, tx.note, catId);
   await ctx.answerCallbackQuery({ text: `${category.emoji} ${category.name}`.trim() });
 
   const updated = await ctx.db.transaction(ctx.userId, txId);
@@ -125,7 +129,8 @@ entry.callbackQuery(/^setcat:(\d+):(\d+)$/, async (ctx) => {
 entry.callbackQuery(/^del:(\d+)$/, async (ctx) => {
   const txId = Number(ctx.match[1]);
   const ok = await ctx.db.deleteTransaction(ctx.userId, txId);
-  await ctx.answerCallbackQuery({ text: ok ? 'Deleted' : 'Already gone' });
+  await ctx.answerCallbackQuery({ text: ok ? 'Deleted' : 'Edit the source table to remove channel expenses; otherwise this is already gone.', show_alert: !ok });
+  if (!ok) return;
   await ctx.editMessageText('🗑 <s>deleted</s>', { parse_mode: 'HTML' });
 });
 
@@ -136,6 +141,7 @@ export async function undoLast(ctx: AppContext): Promise<void> {
     return;
   }
   const tx = await ctx.db.transaction(ctx.userId, txId);
+  if (tx?.source_chat != null) { await ctx.reply('Edit the source channel table to remove this expense.'); return; }
   await ctx.db.deleteTransaction(ctx.userId, txId);
   await ctx.reply(
     tx ? `↩️ Removed ${money(tx.amount, ctx.sign)} · ${prettyDate(tx.spent_on)}` : '↩️ Removed.',

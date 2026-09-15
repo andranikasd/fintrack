@@ -1,9 +1,6 @@
+import { runScheduled } from './schedule';
 import { webhookCallback } from 'grammy';
-import { createBot, COMMANDS } from './bot';
-import { Db, OVERALL } from './db';
-import { monthLabel, monthOf, shiftMonth, todayIn } from './lib/dates';
-import { monthReport } from './handlers/stats';
-import { money } from './lib/money';
+import { createBot } from './bot';
 import type { Env } from './types';
 
 const WEBHOOK_PATH = '/telegram/webhook';
@@ -20,6 +17,8 @@ export default {
       if (!env.BOT_TOKEN || !env.WEBHOOK_SECRET) {
         return new Response('not configured', { status: 500 });
       }
+      const update = await request.clone().json().catch(() => null) as {channel_post?: unknown; edited_channel_post?: unknown} | null;
+      const isChannel = Boolean(update?.channel_post || update?.edited_channel_post);
       const bot = createBot(env, ctx);
       const handle = webhookCallback(bot, 'cloudflare-mod', {
         secretToken: env.WEBHOOK_SECRET,
@@ -28,9 +27,10 @@ export default {
       try {
         return await handle(request);
       } catch (err) {
-        // Never make Telegram retry: a failed update is logged and dropped.
+        // Channel ingestion is idempotent, so transient failures may be retried.
+        // Preserve the existing no-retry behavior for legacy private expense entry.
         console.error('webhook error', err);
-        return new Response('ok');
+        return isChannel ? new Response('retry', {status: 500}) : new Response('ok');
       }
     }
 
@@ -38,40 +38,14 @@ export default {
   },
 
   /**
-   * Daily tick. On the 1st of a user's local month it sends the closing
+   * Five-minute tick. On the 1st of a user's local month it sends the closing
    * summary of the month that just ended.
    */
   async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
-    ctx.waitUntil(runDaily(env, ctx));
+    ctx.waitUntil((async () => {
+      const bot = createBot(env, ctx);
+      await bot.init();
+      await runScheduled(env, bot.api);
+    })());
   },
 } satisfies ExportedHandler<Env>;
-
-async function runDaily(env: Env, ctx: ExecutionContext): Promise<void> {
-  const db = new Db(env.DB, env.DEFAULT_TZ || 'Asia/Yerevan');
-  const bot = createBot(env, ctx);
-  await bot.init();
-  await bot.api.setMyCommands(COMMANDS).catch(() => undefined);
-
-  const sign = env.CURRENCY_SIGN || '֏';
-  for (const user of await db.listUsers()) {
-    const today = todayIn(user.tz);
-    if (!today.endsWith('-01')) continue;
-
-    const closed = shiftMonth(monthOf(today), -1);
-    try {
-      const report = await monthReport(db, user.id, closed, user.tz, sign);
-      const limit = await db.budget(user.id, OVERALL);
-      const tail = limit
-        ? `\n\nNew month, budget back to ${money(limit, sign)}.`
-        : '\n\nNew month. Set a limit with /budget.';
-      await bot.api.sendMessage(user.id, `📅 <b>${monthLabel(closed)} closed</b>\n\n${report}${tail}`, {
-        parse_mode: 'HTML',
-        reply_markup: {
-          inline_keyboard: [[{ text: '📄 PDF report', callback_data: `export:pdf:${closed}` }]],
-        },
-      });
-    } catch (err) {
-      console.error('monthly summary failed', user.id, err);
-    }
-  }
-}

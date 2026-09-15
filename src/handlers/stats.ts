@@ -12,6 +12,7 @@ import {
   shiftMonth,
   todayIn,
 } from '../lib/dates';
+import { minorMoney } from '../lib/savings';
 import { money, pct } from '../lib/money';
 import { escapeHtml } from './entry';
 
@@ -46,10 +47,15 @@ export async function monthReport(
     lines.push(`${progressBar(total, limit)} ${pct(total, limit)}% of ${money(limit, sign)}`);
     lines.push(
       total <= limit
-        ? `Left: <b>${money(limit - total, sign)}</b>`
+        ? `Unspent before savings/reserve: <b>${money(limit - total, sign)}</b>`
         : `Over by: <b>${money(total - limit, sign)}</b>`,
     );
   }
+
+  const prefs = await db.finance.preferences(userId);
+  const netSavings = await db.finance.savingsTotal(userId,from,to);
+  lines.push(`Confirmed net savings: ${minorMoney(netSavings,sign)}`);
+  if (limit) lines.push(`Available after reserve${prefs.funding === 'shared' ? ' and net savings' : ''}: ${minorMoney(limit*100-total*100-prefs.reserve_minor-(prefs.funding === 'shared'?netSavings:0),sign)}`);
 
   if (total === 0) {
     lines.push('', 'No expenses in this month.');

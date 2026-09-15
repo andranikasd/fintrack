@@ -4,3 +4,10 @@ node_modules/
 .env
 dist/
 *.pdf
+
+# Local standalone data and backups
+data/
+backups/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm

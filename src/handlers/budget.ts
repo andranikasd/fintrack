@@ -3,6 +3,8 @@ import type { AppContext } from '../context';
 import { OVERALL } from '../db';
 import { progressBar } from '../lib/alerts';
 import { monthEnd, monthLabel, monthOf, monthStart, todayIn } from '../lib/dates';
+import { financialStatus } from '../lib/finance';
+import { minorMoney } from '../lib/savings';
 import { money, parseAmount, pct } from '../lib/money';
 import { escapeHtml } from './entry';
 
@@ -30,7 +32,7 @@ export async function renderBudgets(ctx: AppContext, edit = false): Promise<void
       `<b>Monthly limit ${money(overall, ctx.sign)}</b>`,
       `${progressBar(spentTotal, overall)} ${pct(spentTotal, overall)}% · spent ${money(spentTotal, ctx.sign)}`,
       spentTotal <= overall
-        ? `Left ${money(overall - spentTotal, ctx.sign)}`
+        ? `Unspent before savings/reserve: ${money(overall - spentTotal, ctx.sign)}`
         : `Over by ${money(spentTotal - overall, ctx.sign)}`,
     );
   } else {
@@ -45,6 +47,10 @@ export async function renderBudgets(ctx: AppContext, edit = false): Promise<void
       return `${c.emoji} ${escapeHtml(c.name)} — ${money(spent, ctx.sign)} / ${money(limit, ctx.sign)} (${pct(spent, limit)}%)`;
     });
   if (perCategory.length) lines.push('', '<b>Per category</b>', ...perCategory);
+
+  const status = await financialStatus(ctx.db,ctx.userId,todayIn(ctx.tz));
+  if (status.available !== null) lines.push(`Available after reserve${status.prefs.funding === 'shared' ? ' and net savings' : ''}: ${minorMoney(status.available,ctx.sign)}`);
+  lines.push(`Savings funding: ${status.prefs.funding}. /funding to change.`);
 
   lines.push('', 'Alerts fire at 80%, 100%, 120%, 150% and 200%.');
 

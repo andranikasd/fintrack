@@ -17,6 +17,22 @@ Just type it:
 Amount first or last, both work. <code>k</code> = thousand, <code>m</code> = million.
 No category in the text? The bot asks with one tap.
 
+<b>Channel, daily reports and savings</b>
+/linkchannel — connect a channel where you and the bot are admins
+/today /yesterday /week — spending and confirmed savings
+/compare — two completed seven-day periods
+/chart 30 — daily spending/savings PDF
+/goal — savings goals; /goalhelp for setup examples
+/save laptop 5500 — confirm money moved to savings
+/withdraw laptop 2000 — record money taken back out
+/funding shared 20000 — shared budget with a protected reserve
+/remind 20:00 /summary 21:00 — optional daily notifications
+/alias metro | Transport — remember an item category
+/syncstatus — posts needing correction
+/forgetpost CHANNEL_ID MESSAGE_ID — remove a deleted post's records
+
+Edit your daily channel table to correct amounts or remove rows. Savings rows use save:laptop or withdraw:laptop as the item. Totals are calculated from expense rows, excluding savings transfers.
+
 <b>Commands</b>
 /month — this month, by category
 /stats — last 6 months + top categories

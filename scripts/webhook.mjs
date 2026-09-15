@@ -34,6 +34,22 @@ const api = async (method, body) => {
 };
 
 const COMMANDS = [
+  ['today', 'Today spending and savings'],
+  ['yesterday', 'Yesterday spending and savings'],
+  ['week', 'Seven daily spending and savings bars'],
+  ['compare', 'Compare two completed weeks'],
+  ['chart', 'Daily spending and savings PDF'],
+  ['goal', 'Savings goals and plans'],
+  ['save', 'Confirm a savings contribution'],
+  ['withdraw', 'Record a savings withdrawal'],
+  ['funding', 'Shared or separate savings budget'],
+  ['remind', 'Set daily savings reminder time'],
+  ['summary', 'Set daily summary time'],
+  ['linkchannel', 'Link an expense channel'],
+  ['channels', 'List linked channels'],
+  ['syncstatus', 'Check channel parsing errors'],
+  ['alias', 'Teach an item category'],
+
   ['month', 'This month by category'],
   ['stats', 'Last 6 months'],
   ['last', 'Recent expenses'],
@@ -54,8 +70,8 @@ switch (action) {
     await api('setWebhook', {
       url: `${WORKER_URL.replace(/\/$/, '')}/telegram/webhook`,
       secret_token: WEBHOOK_SECRET,
-      allowed_updates: ['message', 'callback_query'],
-      drop_pending_updates: true,
+      allowed_updates: ['message', 'callback_query', 'channel_post', 'edited_channel_post'],
+      drop_pending_updates: false,
       max_connections: 40,
     });
     await api('setMyCommands', { commands: COMMANDS });

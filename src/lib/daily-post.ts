@@ -1,7 +1,7 @@
 import { parseDateToken, todayIn } from './dates';
 import { parseMinor, validDate } from './savings';
 
-export interface PostRow { label: string; amountMinor: number; kind: 'expense' | 'save' | 'withdraw' | 'income'; }
+export interface PostRow { label: string; amountMinor: number; kind: 'expense' | 'save' | 'withdraw' | 'income' | 'account'; }
 export interface DailyPost { day: string; rows: PostRow[]; warning: string | null; }
 type ObjectValue = Record<string, unknown>;
 function object(value: unknown): ObjectValue {
@@ -87,8 +87,8 @@ export function parseDailyPost(message: { text?: string; caption?: string; rich_
     let label = match[1]!.trim();
     const amount = parseMinor(match[2]!.replace(/\s*(֏|AMD)$/i, '').trim());
     if (!label || label.length > 120 || amount === null) throw new Error(`Invalid item or amount: ${line.slice(0,80)}`);
-    const savings = /^(save|withdraw|income)\s*:\s*(.+)$/i.exec(label);
-    const kind = savings ? savings[1]!.toLowerCase() as 'save' | 'withdraw' | 'income' : 'expense';
+    const savings = /^(save|withdraw|income|account)\s*:\s*(.+)$/i.exec(label);
+    const kind = savings ? savings[1]!.toLowerCase() as 'save' | 'withdraw' | 'income' | 'account' : 'expense';
     if (savings) label = savings[2]!.trim();
     if (kind === 'expense' && amount % 100) throw new Error('Expense amounts must be whole drams. Savings and income can have two decimals.');
     rows.push({ label, amountMinor: amount, kind });

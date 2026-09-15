@@ -155,12 +155,13 @@ export class Db {
     amount: number,
     note: string,
     spentOn: string,
+    accountId: number | null = null,
   ): Promise<number> {
     const row = await this.d1
       .prepare(
-        'INSERT INTO transactions (user_id, category_id, amount, note, spent_on) VALUES (?, ?, ?, ?, ?) RETURNING id',
+        'INSERT INTO transactions (user_id, category_id, amount, note, spent_on, account_id) VALUES (?, ?, ?, ?, ?, ?) RETURNING id',
       )
-      .bind(userId, categoryId, amount, note, spentOn)
+      .bind(userId, categoryId, amount, note, spentOn, accountId)
       .first<{ id: number }>();
     return row!.id;
   }
@@ -197,6 +198,14 @@ export class Db {
       )
       .bind(userId, txId)
       .first<TxWithCategory>();
+  }
+
+  async sourceRowsForPost(userId: number, chat: number, message: number) {
+    const expenses=(await this.d1.prepare(`SELECT t.note AS label,t.amount,t.account_id,c.name AS category_name
+      FROM transactions t LEFT JOIN categories c ON c.id=t.category_id WHERE t.user_id=? AND t.source_chat=? AND t.source_message=? ORDER BY t.id`).bind(userId,chat,message).all<{label:string;amount:number;account_id:number|null;category_name:string|null}>()).results;
+    const income=(await this.d1.prepare('SELECT source AS label,amount_minor,account_id,passive FROM income WHERE user_id=? AND source_chat=? AND source_message=? ORDER BY id').bind(userId,chat,message).all<{label:string;amount_minor:number;account_id:number|null;passive:number}>()).results;
+    const savings=(await this.d1.prepare('SELECT g.name AS label,s.amount_minor FROM savings s JOIN goals g ON g.id=s.goal_id WHERE s.user_id=? AND s.source_chat=? AND s.source_message=? ORDER BY s.id').bind(userId,chat,message).all<{label:string;amount_minor:number}>()).results;
+    return {expenses,income,savings};
   }
 
   async transactionsBetween(

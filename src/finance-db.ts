@@ -16,6 +16,11 @@ export class FinanceDb {
   async post(chat: number, message: number) {
     return this.db.prepare('SELECT * FROM channel_posts WHERE chat_id=? AND message_id=?').bind(chat,message).first<{error: string | null; spent_on: string | null}>();
   }
+  async latestPostForDay(user: number, day: string) {
+    return this.db.prepare(`SELECT chat_id,message_id,spent_on FROM channel_posts
+      WHERE user_id=? AND spent_on=? AND error IS NULL ORDER BY message_id DESC LIMIT 1`).bind(user,day)
+      .first<{chat_id:number;message_id:number;spent_on:string}>();
+  }
   async errors(user: number) { return (await this.db.prepare('SELECT chat_id,message_id,error FROM channel_posts WHERE user_id=? AND error IS NOT NULL LIMIT 10').bind(user).all<{chat_id:number;message_id:number;error:string}>()).results; }
   /** One D1 transaction: newer revisions replace only their own source records. */
   async syncPost(user: number, chat: number, message: number, version: number, update: number, day: string | null, rows: SyncedRow[], error: string | null) {

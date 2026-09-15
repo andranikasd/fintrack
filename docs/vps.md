@@ -271,6 +271,41 @@ docker compose exec bot sqlite3 /data/fintrack.sqlite 'DELETE FROM dashboard_tok
 
 ## Dashboard views and accounts
 
+### Adding spending from the bot
+
+Use `/add item amount @ Account` to keep the linked channel table up to date:
+
+```text
+/add metro 150 @ Card
+/add yesterday groceries 4500 @ Cash
+```
+
+Direct private-chat entries also ask for the paying account once accounts have
+been created. Include it immediately, for example `1500 cafe @ Card`, or send
+`1500 cafe` and choose the account button. Direct entries update the ledger;
+use `/add` when the channel table should also be updated.
+
+The bot asks you to choose an account when the account suffix is missing, and
+asks you to create one when no accounts exist. It then edits the latest table
+for that day in place. If no table exists for that day, it creates a new plain
+text table in the linked channel. The bot needs administrator permission to
+post and edit channel messages. The generated table keeps the date, expense
+rows, income/savings rows already synced from that post, and a recalculated
+expense total. Telegram may deliver the resulting channel update shortly after
+the command; `/syncstatus` shows any delayed or invalid sync.
+
+Channel rows with an account suffix are required once at least one account has
+been created. For example, `metro @ Card | 150`. A missing or unknown account
+keeps the last valid source version and asks you to correct the row. Expenses
+added with `/add` therefore use the same source-of-truth path as hand-edited
+channel tables.
+
+You can create an account in the channel with `account:Card | 100000`. This row
+is setup data: it creates the account with that opening balance on the table's
+date and is excluded from spending totals. Use the live Accounts view or
+`/account` to change its opening date, archive it, or mark it as a passive-income
+account.
+
 Use the view buttons at the top of `/dashboard`:
 
 - **Today:** today's confirmed spending/income, daily allowance from the monthly

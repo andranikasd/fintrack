@@ -34,6 +34,7 @@ const api = async (method, body) => {
 };
 
 const COMMANDS = [
+  ['add', 'Add spending to the channel table'],
   ['account', 'Create an account with an opening balance'],
   ['accounts', 'View recorded account balances'],
   ['income', 'Record income and view sources'],

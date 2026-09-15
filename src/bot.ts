@@ -20,6 +20,7 @@ import { stats } from './handlers/stats';
 import type { Env } from './types';
 
 export const COMMANDS = [
+  { command: 'add', description: 'Add spending to the channel table' },
   { command: 'dashboard', description: 'Interactive charts and money management' },
   { command: 'account', description: 'Create an account with an opening balance' },
   { command: 'accounts', description: 'View recorded account balances' },

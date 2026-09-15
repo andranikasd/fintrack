@@ -56,11 +56,19 @@ export async function handleChannelPost(ctx: AppContext, db: Db, allowlist: Set<
   let error: string | null = null;
   try {
     parsed = parseDailyPost(post,tz);
+    for (const row of parsed.rows.filter(r=>r.kind==='account')) {
+      const account = accountEntry(row.label);
+      if (!account.label || account.label.length>60) throw new Error('Account names must be 1–60 characters.');
+      if (account.accountName) throw new Error('Account rows do not need “@ Account”: use account:Card | 100000.');
+      await db.accounts.create(linked.user_id,account.label,row.amountMinor,parsed.day,`channel-account:${post.chat.id}:${post.message_id}:${account.label.toLowerCase()}`);
+    }
     const [categories,aliases,goals,accounts,accountNames] = await Promise.all([db.categories(linked.user_id),db.finance.aliases(linked.user_id),db.finance.goals(linked.user_id),db.accounts.list(linked.user_id,parsed.day),db.accounts.aliases(linked.user_id)]);
-    rows = parsed.rows.map(row => {
+    rows = parsed.rows.map((row): SyncedRow | null => {
+      if (row.kind==='account') return null;
       const entry=row.kind==='income'||row.kind==='expense'?accountEntry(row.label):{label:row.label,accountName:null,passive:false};
       const account=entry.accountName?accounts.find(a=>a.name.toLowerCase()===entry.accountName!.toLowerCase()||accountNames.some(n=>n.account_id===a.id&&n.name.toLowerCase()===entry.accountName!.toLowerCase())):null;
-      if (entry.accountName&&!account) throw new Error('Unknown account: '+entry.accountName+'. Create it in the dashboard.');
+      if (entry.accountName&&!account) throw new Error('Unknown account: '+entry.accountName+'. Create it with /account or in the dashboard.');
+      if (row.kind==='expense' && !entry.accountName && accounts.some(a=>!a.archived)) throw new Error('This spending row needs an account. Add “ @ Account” to the item, then edit the channel post.');
       if(row.kind==='income'&&!account) throw new Error('Income needs a receiving account. Use income:Salary @ Card and create Card in /dashboard or /account.');
       if (row.kind === 'income') return {categoryId:null,label:entry.label,amount:row.amountMinor,income:true,accountId:account?.id,passive:entry.passive};
       if (row.kind === 'expense') row.label=entry.label;
@@ -71,8 +79,8 @@ export async function handleChannelPost(ctx: AppContext, db: Db, allowlist: Set<
       }
       const alias = aliases.find(a=>a.label.toLowerCase()===row.label.toLowerCase());
       const categoryId = alias && categories.some(c=>c.id===alias.category_id) ? alias.category_id : matchCategory(row.label,categories).category?.id ?? null;
-      return {categoryId,label:row.label,amount:row.amountMinor/100,accountId:account?.id};
-    });
+      return {categoryId,label:row.label,amount:row.amountMinor/100,accountId:account?.id ?? null};
+    }).filter((row): row is SyncedRow => row !== null);
   } catch (err) { error = err instanceof Error ? err.message : 'Could not read this post.'; }
   let changed: boolean;
   try { changed = await db.finance.syncPost(linked.user_id,post.chat.id,post.message_id,post.edit_date ?? post.date,ctx.update.update_id,error?null:parsed!.day,rows,error); }

@@ -8,9 +8,76 @@ import { financialStatus } from '../lib/finance';
 import { minorMoney } from '../lib/savings';
 import { money } from '../lib/money';
 import { matchCategory, parseEntry } from '../lib/parse';
+import { accountEntry } from '../lib/account-entry';
 import type { TxWithCategory } from '../types';
 
 export const entry = new Composer<AppContext>();
+
+function accountKeyboard(accounts: Array<{id:number;name:string}>): InlineKeyboard {
+  const kb = new InlineKeyboard();
+  for (const account of accounts) kb.text(account.name, `addaccount:${account.id}`).row();
+  return kb;
+}
+
+async function addToChannel(ctx: AppContext, parsed: {amount:number; rest:string; spentOn:string}, accountId: number): Promise<void> {
+  const account = await ctx.db.accounts.get(ctx.userId, accountId);
+  if (!account || account.archived) { await ctx.reply('That account is unavailable. Use /accounts and try again.'); return; }
+  const linked = (await ctx.db.finance.channels(ctx.userId))[0];
+  if (!linked) { await ctx.reply('Link a finance channel first with /linkchannel.'); return; }
+  const raw = accountEntry(parsed.rest);
+  const label = raw.label.trim();
+  if (!label) { await ctx.reply('Add an item name, for example /add metro 150.'); return; }
+  const categories = await ctx.db.categories(ctx.userId);
+  const matched = matchCategory(label, categories);
+  const item = matched.note ? `${matched.category?.name ?? ''} ${matched.note}`.trim() : label;
+  const suffix = ` @ ${account.name}`;
+  const post = await ctx.db.finance.latestPostForDay(ctx.userId, parsed.spentOn);
+  let text: string;
+  if (post) {
+    const rows = await ctx.db.sourceRowsForPost(ctx.userId, post.chat_id, post.message_id);
+    const accounts = await ctx.db.accounts.list(ctx.userId, parsed.spentOn);
+    const nameOf = (id: number|null) => id == null ? '' : ` @ ${accounts.find(a=>a.id===id)?.name ?? 'Unassigned'}`;
+    const lines = [parsed.spentOn, 'Item | price'];
+    for (const row of rows.expenses) lines.push(`${row.label}${nameOf(row.account_id)} | ${row.amount}`);
+    for (const row of rows.income) lines.push(`income:${row.label}${nameOf(row.account_id)}${row.passive?' [passive]':''} | ${(row.amount_minor/100).toFixed(row.amount_minor%100?2:0)}`);
+    for (const row of rows.savings) lines.push(`save:${row.label} | ${(row.amount_minor/100).toFixed(row.amount_minor%100?2:0)}`);
+    lines.push(`${item}${suffix} | ${parsed.amount}`);
+    const total = rows.expenses.reduce((sum,row)=>sum+row.amount,0) + parsed.amount;
+    lines.push(`Total: ${total}`); text = lines.join('\n');
+    await ctx.api.editMessageText(post.chat_id, post.message_id, text);
+    await ctx.reply(`Added ${parsed.amount} ֏ ${item} to the ${parsed.spentOn} channel table.`);
+  } else {
+    text = `${parsed.spentOn}\nItem | price\n${item}${suffix} | ${parsed.amount}\nTotal: ${parsed.amount}`;
+    const sent = await ctx.api.sendMessage(linked.chat_id, text);
+    await ctx.reply(`Created the ${parsed.spentOn} channel table and added ${parsed.amount} ֏ ${item}.`);
+    // The channel update will import the source row. This reminder helps when a
+    // Telegram installation delays channel_post delivery briefly.
+    if (!sent) await ctx.reply('The channel did not confirm the new message. Check /syncstatus.');
+  }
+  await ctx.db.clearState(ctx.userId);
+}
+
+entry.command('add', async ctx => {
+  const parsed = parseEntry(ctx.match.trim(), ctx.tz);
+  if (!parsed) { await ctx.reply('Use /add metro 150 @ Card, or /add yesterday metro 150 @ Card.'); return; }
+  const raw = accountEntry(parsed.rest);
+  const accounts = (await ctx.db.accounts.list(ctx.userId, parsed.spentOn)).filter(a=>!a.archived);
+  if (!accounts.length) { await ctx.reply('Create an account first with /account Card 0, then use /add item amount @ Card.'); return; }
+  const account = raw.accountName ? accounts.find(a=>a.name.toLowerCase()===raw.accountName!.toLowerCase()) : null;
+  if (raw.accountName && !account) { await ctx.reply('Unknown account. Choose one:', {reply_markup:accountKeyboard(accounts)}); await ctx.db.setState(ctx.userId,'add_account',{amount:parsed.amount,rest:parsed.rest,spentOn:parsed.spentOn}); return; }
+  if (!account) { await ctx.reply('Which account paid for this spending?', {reply_markup:accountKeyboard(accounts)}); await ctx.db.setState(ctx.userId,'add_account',{amount:parsed.amount,rest:parsed.rest,spentOn:parsed.spentOn}); return; }
+  await addToChannel(ctx,parsed,account.id);
+});
+
+entry.callbackQuery(/^addaccount:(\d+)$/, async ctx => {
+  const state = await ctx.db.getState(ctx.userId);
+  const accountId = Number(ctx.match[1]);
+  if (!state || state.state !== 'add_account') { await ctx.answerCallbackQuery({text:'This request expired. Use /add again.',show_alert:true}); return; }
+  await ctx.answerCallbackQuery();
+  await ctx.db.clearState(ctx.userId);
+  const p = state.payload;
+  await addToChannel(ctx,{amount:Number(p.amount),rest:String(p.rest),spentOn:String(p.spentOn)},accountId);
+});
 
 function txLine(tx: TxWithCategory, sign: string, today: string): string {
   const cat = tx.category_id
@@ -78,16 +145,36 @@ entry.on('message:text', async (ctx) => {
     return;
   }
 
+  const accountHint = accountEntry(parsed.rest);
+  const accounts = (await ctx.db.accounts.list(ctx.userId, parsed.spentOn)).filter(a=>!a.archived);
+  const account = accountHint.accountName ? accounts.find(a=>a.name.toLowerCase()===accountHint.accountName!.toLowerCase()) : null;
+  if (accounts.length && !account) {
+    await ctx.reply(accountHint.accountName ? 'Unknown account. Choose the account that paid for this spending:' : 'Which account paid for this spending?', {reply_markup:accountKeyboard(accounts)});
+    await ctx.db.setState(ctx.userId,'entry_account',{amount:parsed.amount,rest:parsed.rest,spentOn:parsed.spentOn});
+    return;
+  }
   const categories = await ctx.db.categories(ctx.userId);
-  const { category, note } = matchCategory(parsed.rest, categories);
+  const { category, note } = matchCategory(accountHint.label, categories);
   const txId = await ctx.db.addTransaction(
     ctx.userId,
     category?.id ?? null,
     parsed.amount,
     note,
     parsed.spentOn,
+    account?.id ?? null,
   );
   await confirm(ctx, txId, category === null);
+});
+
+entry.callbackQuery(/^entryaccount:(\d+)$/, async ctx => {
+  const state = await ctx.db.getState(ctx.userId), accountId=Number(ctx.match[1]);
+  if (!state || state.state!=='entry_account') { await ctx.answerCallbackQuery({text:'This request expired. Send the expense again.',show_alert:true}); return; }
+  const account=await ctx.db.accounts.get(ctx.userId,accountId);
+  if(!account||account.archived){await ctx.answerCallbackQuery({text:'Account unavailable.',show_alert:true});return;}
+  await ctx.answerCallbackQuery();await ctx.db.clearState(ctx.userId);
+  const categories=await ctx.db.categories(ctx.userId),match=matchCategory(String(state.payload.rest).replace(/\s+@\s+.+$/,''),categories);
+  const txId=await ctx.db.addTransaction(ctx.userId,match.category?.id??null,Number(state.payload.amount),match.note,String(state.payload.spentOn),account.id);
+  await confirm(ctx,txId,match.category===null);
 });
 
 entry.callbackQuery(/^pick:(\d+)$/, async (ctx) => {

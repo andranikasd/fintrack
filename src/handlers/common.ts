@@ -18,6 +18,7 @@ Amount first or last, both work. <code>k</code> = thousand, <code>m</code> = mil
 No category in the text? The bot asks with one tap.
 
 <b>Channel, daily reports and savings</b>
+/add metro 150 @ Card — add spending to the channel table
 /linkchannel — connect a channel where you and the bot are admins
 /today /yesterday /week — spending and confirmed savings
 /compare — two completed seven-day periods
@@ -38,6 +39,7 @@ No category in the text? The bot asks with one tap.
 /forgetpost CHANNEL_ID MESSAGE_ID — remove a deleted post's records
 
 Edit your daily channel table to correct amounts or remove rows. Savings rows use save:laptop or withdraw:laptop as the item. Income rows use income:Salary @ Card. Add [passive] after the account name for passive income. Totals are calculated from expense rows, excluding savings transfers.
+Create an account from a channel table with <code>account:Card | 100000</code>; it is setup data and is not counted as spending.
 
 <b>Commands</b>
 /month — this month, by category

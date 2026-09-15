@@ -54,16 +54,16 @@ daily.command('week',async ctx=> {
   const series = await dailySeries(ctx.db,ctx.userId,addDays(today,-6),today);
   const max = Math.max(...series.flatMap(s=>[s.spent,s.saved]),1);
   const bar = (n:number)=>'▇'.repeat(n>0?Math.max(1,Math.round(n/max*12)):0);
-  await ctx.reply(`Last 7 days · today is incomplete\nSpending / savings deposits\n\n${series.map(s=>`${s.day}\n${bar(s.spent)} ${money(s.spent,ctx.sign)} spent\n${bar(s.saved)} ${minorMoney(Math.round(s.saved*100),ctx.sign)} saved${s.withdrawn?`\nWithdrawn: ${minorMoney(Math.round(s.withdrawn*100),ctx.sign)}`:''}`).join('\n\n')}\n\n/chart 7 for a PDF chart.`);
+  await ctx.reply(`Last 7 days · today is incomplete\nSpending / savings deposits\n\n${series.map(s=>`${s.day}\n${bar(s.spent)} ${money(s.spent,ctx.sign)} spent\n${bar(s.saved)} ${minorMoney(Math.round(s.saved*100),ctx.sign)} saved${s.withdrawn?`\nWithdrawn: ${minorMoney(Math.round(s.withdrawn*100),ctx.sign)}`:''}`).join('\n\n')}\n\n/chart 7 for interactive charts. /chartpdf 7 for PDF.`);
 });
 daily.command('compare',async ctx=> {
   const today=todayIn(ctx.tz), end=addDays(today,-1), start=addDays(today,-7), prev=addDays(today,-14);
   const [current,previous,saved,oldSaved] = await Promise.all([ctx.db.totalBetween(ctx.userId,start,end),ctx.db.totalBetween(ctx.userId,prev,addDays(start,-1)),ctx.db.finance.savingsTotal(ctx.userId,start,end),ctx.db.finance.savingsTotal(ctx.userId,prev,addDays(start,-1))]);
   await ctx.reply(`Seven completed days (${start} to ${end}) vs preceding seven\nSpent: ${money(current,ctx.sign)} vs ${money(previous,ctx.sign)}\nChange: ${money(current-previous,ctx.sign)}${previous?` (${Math.round((current-previous)/previous*100)}%)`:''}\nNet savings: ${minorMoney(saved,ctx.sign)} vs ${minorMoney(oldSaved,ctx.sign)}\nToday is excluded for a fair comparison.`);
 });
-daily.command('chart',async ctx=> {
+daily.command('chartpdf',async ctx=> {
   const arg=ctx.match.trim()||'30';
-  if (!/^\d+$/.test(arg)||Number(arg)<1||Number(arg)>90) {await ctx.reply('Use /chart 7, /chart 30, or any range from 1 to 90 days.');return;}
+  if (!/^\d+$/.test(arg)||Number(arg)<1||Number(arg)>90) {await ctx.reply('Use /chartpdf 7, /chartpdf 30, or any range from 1 to 90 days.');return;}
   const to=todayIn(ctx.tz),from=addDays(to,1-Number(arg));
   await ctx.reply('Building your spending and savings chart…');
   ctx.exec.waitUntil((async()=> {

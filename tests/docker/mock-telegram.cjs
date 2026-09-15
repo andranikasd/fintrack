@@ -15,7 +15,9 @@ const updates = [
   message(3, '/linkchannel -1001234567890'),
   { update_id: 4, channel_post: { message_id: 1, date: now, chat: channel, rich_message: { blocks: [{ type: 'table', cells: [['Item', 'price'], ['metro', '150'], ['redline', '600']].map(row => row.map(text => ({ text, align: 'center', valign: 'middle' }))) }] } } },
   message(5, '/save laptop 5500'),
-  message(6, '/chart 7'),
+  message(6, '/chartpdf 7'),
+  message(7, '/income salary 450000'),
+  message(8, '/dashboard'),
 ];
 const fake = async (url, options = {}) => {
   if (!String(url).startsWith('https://api.telegram.org/')) throw new Error('Unexpected network request in smoke test');
@@ -29,6 +31,11 @@ const fake = async (url, options = {}) => {
     for await (const part of options.body) size += Buffer.byteLength(part);
     writeFileSync('/data/smoke-pdf-size', String(size));
     result = { message_id: 99, date: now, chat };
+  }
+  if (method === 'sendMessage') {
+    const payload = JSON.parse(options.body);
+    const link = payload.reply_markup?.inline_keyboard?.flat().find(b => b.url)?.url;
+    if (link) writeFileSync('/data/smoke-dashboard-link', link);
   }
   if (method === 'sendMessage') result = { message_id: 100, date: now, chat };
   if (method === 'getUpdates') {

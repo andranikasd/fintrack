@@ -1,0 +1,5 @@
+# For a reverse proxy already installed on the VPS, or an SSH tunnel for testing.
+services:
+  bot:
+    ports:
+      - '127.0.0.1:${DASHBOARD_PORT:-8080}:8080'

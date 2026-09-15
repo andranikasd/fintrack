@@ -3,6 +3,7 @@ services:
     image: fintrack:verify
     restart: 'no'
     environment:
+      DASHBOARD_URL: http://127.0.0.1:8080
       NODE_OPTIONS: --require=/app/mock-telegram.cjs
     volumes:
       - ./tests/docker/mock-telegram.cjs:/app/mock-telegram.cjs:ro

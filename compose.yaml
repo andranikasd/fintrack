@@ -15,8 +15,6 @@ services:
       DASHBOARD_URL: ${DASHBOARD_URL:-}
       DEFAULT_TZ: ${DEFAULT_TZ:-Asia/Yerevan}
       BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-7}
-    ports:
-      - "127.0.0.1:8080:8080"
     volumes:
       - data:/data
       - backups:/backups
@@ -35,7 +33,7 @@ services:
       options:
         max-size: '10m'
         max-file: '3'
-    # The dashboard is bound to host loopback. Use the optional HTTPS proxy for remote access.
+    # No host ports by default. Optional dashboard overrides add HTTPS or loopback access.
 
 volumes:
   data:

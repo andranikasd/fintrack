@@ -166,3 +166,104 @@ The Docker smoke test uses isolated disposable volumes and an in-process Telegra
 mock with dummy credentials. It checks migrations, channel ingestion, goal precision,
 PDF generation/upload, live backup, non-root execution, health, graceful restart and
 persistence. It never loads the real `.env` or contacts your Telegram bot.
+
+## Interactive charts, income and the live dashboard
+
+After updating with `docker compose up -d --build`, `/chart 30` sends an interactive
+HTML report if no dashboard URL is configured. Open the file in a browser; it
+includes its own charts, styling and data, so it works offline without a chart
+service or CDN. Choose dates within the snapshot, toggle chart series, group by
+day/week/month, click bars to explore a period, filter categories and sources,
+search the ledger, and download the filtered rows as CSV.
+
+`/dashboard html` always generates an offline snapshot of the last 90 days.
+`/chartpdf 30` keeps the previous downloadable PDF chart. Evening summaries now
+attach an interactive seven-day HTML report.
+
+### Income
+
+Record money when you receive it:
+
+```text
+/income salary 450000
+/income freelance 25000.50 2026-09-15
+```
+
+Or add income alongside expenses in your daily channel table:
+
+```text
+Item | price
+income:salary | 450000
+metro | 150
+save:laptop | 5500.77
+```
+
+Income rows participate in the same atomic post-edit syncing as expenses and
+savings. They never increase expense totals. `/income` shows this month's sources
+and removal buttons for manually recorded income. Correct a channel income by
+editing its source table; correct a manual one in the live dashboard or remove it
+and record the replacement. Income supports two decimal places.
+
+The dashboard shows income received, spending, savings deposits, withdrawals and
+**net cash flow after savings**. This is a period's recorded movement, not your
+bank balance: no opening cash balance or bank connection is assumed. The chosen
+spending budget stays unchanged when income is recorded.
+
+### Live dashboard with automatic HTTPS
+
+For a dashboard that can change saved records, point a DNS name at the VPS and set:
+
+```dotenv
+DASHBOARD_HOST=fintrack.your-domain.com
+```
+
+Then enable the included Caddy reverse proxy:
+
+```bash
+docker compose -f compose.yaml -f compose.dashboard.yaml up -d --build
+```
+
+Allow inbound TCP ports 80 and 443. Caddy obtains and renews the HTTPS certificate;
+its certificate data is stored in named volumes. Send `/dashboard` or `/chart 30`
+to your bot to receive a private sign-in link. The link is single-use and expires
+in 10 minutes; the browser session expires after 24 hours. Only accounts in
+`ALLOWED_USER_IDS` can sign in, and each sees their own records. Use **Sign out** to
+revoke the current session. The bot token is never sent to the browser.
+
+Use the same two `-f` options for future updates, logs and shutdown commands so the
+HTTPS proxy remains part of the deployment.
+
+If you already have an HTTPS reverse proxy on the VPS, set
+`DASHBOARD_URL=https://fintrack.your-domain.com` instead and publish only a loopback
+port with:
+
+```bash
+docker compose -f compose.yaml -f compose.dashboard-local.yaml up -d --build
+```
+
+Proxy that hostname to `http://127.0.0.1:8080`. Set `DASHBOARD_PORT` if port 8080 is
+already used. Plain HTTP dashboard URLs are accepted only for `localhost` and
+`127.0.0.1`, for local testing or SSH tunnels. The base Compose file still publishes
+no host ports.
+
+### Changes you can make in the browser
+
+- Add income or expenses, and edit/remove manually entered income and expenses.
+- Assign categories to imported items; matching channel names are remembered.
+- Create a category, set the monthly budget, and confirm a savings contribution.
+- Navigate charts and filter/export the ledger without changing recorded data.
+
+Channel amounts/dates remain controlled by the original daily table. Keeping that
+single source prevents the next table edit from silently undoing a browser change.
+Goal setup, category rename/archive, reminder preferences, and savings withdrawals
+remain available through the Telegram commands. The offline HTML snapshot offers
+filtering and navigation; it cannot write to the database.
+
+Migrations `0003_income.sql` and `0004_dashboard.sql` are additive and run at startup.
+Daily backups include income and dashboard sessions. Restoring a recent backup can
+restore sessions that were valid at that snapshot; to revoke every dashboard link
+and session after a restore:
+
+```bash
+docker compose exec bot sqlite3 /data/fintrack.sqlite 'DELETE FROM dashboard_tokens;'
+```

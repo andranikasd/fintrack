@@ -9,11 +9,15 @@ import { monthOf, monthStart, todayIn } from '../lib/dates';
 
 async function body(request: IncomingMessage): Promise<Record<string,unknown>> {
   if (!request.headers['content-type']?.startsWith('application/json')) throw new ActionError('JSON is required.',415);
-  let text='';
+  const chunks: Buffer[]=[];
+  let size=0;
   for await (const chunk of request) {
-    text+=chunk.toString();
-    if (Buffer.byteLength(text)>16384) throw new ActionError('Request too large.',413);
+    const bytes=Buffer.isBuffer(chunk)?chunk:Buffer.from(chunk);
+    size+=bytes.length;
+    if (size>16384) throw new ActionError('Request too large.',413);
+    chunks.push(bytes);
   }
+  const text=Buffer.concat(chunks).toString('utf8');
   try {
     const value:unknown=JSON.parse(text);
     if (!value || typeof value!=='object' || Array.isArray(value)) throw new Error();

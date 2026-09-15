@@ -1,0 +1,27 @@
+# Optional public HTTPS dashboard. Set DASHBOARD_HOST to a DNS name pointing at the VPS.
+services:
+  bot:
+    environment:
+      DASHBOARD_URL: https://${DASHBOARD_HOST:?Set DASHBOARD_HOST to your dashboard domain}
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      DASHBOARD_HOST: ${DASHBOARD_HOST:?Set DASHBOARD_HOST to your dashboard domain}
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - bot
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+volumes:
+  caddy_data:
+  caddy_config:

@@ -45,7 +45,7 @@ async function main(): Promise<void> {
     response.writeHead(healthy ? 200 : 503, { 'Content-Type': 'application/json' });
     response.end(JSON.stringify({ status: healthy ? 'ok' : 'starting-or-degraded' }));
   });
-  // Compose publishes only to host loopback unless an HTTPS proxy is enabled.
+  // The optional Compose dashboard overrides provide HTTPS or host-loopback access.
   server.listen(8080, '0.0.0.0');
 
   const tick = async () => {

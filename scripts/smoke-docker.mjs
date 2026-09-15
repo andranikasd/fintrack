@@ -33,12 +33,32 @@ try {
   const pdfSize = Number(compose('exec', '-T', 'bot', 'cat', '/data/smoke-pdf-size'));
   assert.ok(pdfSize > 1000, 'PDF generation and upload must complete');
   assert.equal(compose('exec', '-T', 'bot', 'id', '-u').trim(), '1000');
+  compose('exec', '-T', 'bot', 'node', '-e', `
+    (async()=>{
+      const fs=require('node:fs');
+      const link=new URL(fs.readFileSync('/data/smoke-dashboard-link','utf8'));
+      const token=new URLSearchParams(link.hash.slice(1)).get('login');
+      const origin='http://127.0.0.1:8080';
+      const denied=await fetch(origin+'/api/dashboard');
+      if(denied.status!==401)throw new Error('Unauthenticated dashboard exposed data');
+      const login=await fetch(origin+'/api/session',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify({token})});
+      if(login.status!==200)throw new Error('Dashboard login failed');
+      const cookie=login.headers.get('set-cookie').split(';')[0];
+      const response=await fetch(origin+'/api/dashboard',{headers:{Cookie:cookie}});
+      const data=await response.json();
+      if(data.records.filter(r=>r.kind==='income').reduce((s,r)=>s+r.amountMinor,0)!==45000000)throw new Error('Dashboard income incorrect');
+      const post=await fetch(origin+'/api/action',{method:'POST',headers:{Origin:origin,Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify({action:'budget',amount:'150000',requestId:crypto.randomUUID()})});
+      if(post.status!==200)throw new Error('Dashboard update failed');
+      console.log('Live dashboard sign-in, income and budget update passed.');
+    })().catch(e=>{console.error(e.message);process.exit(1)});
+  `);
+
   compose('exec', '-T', 'bot', 'node', 'dist/backup.mjs', '/backups/smoke.sqlite');
   assert.equal(compose('exec', '-T', 'bot', 'sqlite3', '/backups/smoke.sqlite', 'SELECT SUM(amount) FROM transactions;').trim(), '750');
   compose('restart', 'bot');
   await healthy();
   assert.equal(sql('SELECT SUM(amount) AS n FROM transactions')[0].n, 750);
-  assert.equal(sql('SELECT COUNT(*) AS n FROM schema_migrations')[0].n, 2);
+  assert.equal(sql('SELECT COUNT(*) AS n FROM schema_migrations')[0].n, 4);
   const snapshot = execFileSync('docker', [...args, 'exec', '-T', 'bot', 'cat', '/backups/smoke.sqlite'], { env });
   sql("INSERT INTO transactions(user_id,amount,note,spent_on) VALUES(123456789,100,'after backup','2026-09-15') RETURNING id");
   compose('stop', 'bot');

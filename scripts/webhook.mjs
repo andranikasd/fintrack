@@ -34,12 +34,15 @@ const api = async (method, body) => {
 };
 
 const COMMANDS = [
+  ['income', 'Record income and view sources'],
+  ['dashboard', 'Interactive charts and money management'],
+  ['chartpdf', 'Daily spending and savings PDF'],
   ['uncategorized', 'Assign categories to unknown items'],
   ['today', 'Today spending and savings'],
   ['yesterday', 'Yesterday spending and savings'],
   ['week', 'Seven daily spending and savings bars'],
   ['compare', 'Compare two completed weeks'],
-  ['chart', 'Daily spending and savings PDF'],
+  ['chart', 'Interactive income and spending charts'],
   ['goal', 'Savings goals and plans'],
   ['save', 'Confirm a savings contribution'],
   ['withdraw', 'Record a savings withdrawal'],

@@ -244,9 +244,12 @@ notification, but cannot duplicate a confirmed contribution.
   Today also shows budget availability and goal progress.
 - `/week`: seven days of spending and savings bars.
 - `/compare`: the last seven completed days versus the preceding seven, excluding today.
-- `/chart 30`: a PDF with separate expense, savings and withdrawal bars; 1–90 days.
+- `/chart 30`: interactive HTML charts for income, expenses, savings and categories; 1–366 days.
+- `/dashboard`: live dashboard when configured; otherwise a 90-day HTML snapshot.
+- `/chartpdf 30`: the previous PDF chart, for 1–90 days.
+- `/income salary 450000`: record income; `/income` shows monthly income by source.
 - `/month`: spending, net savings and budget availability.
-- `/summary 21:00`: daily private report plus a seven-day PDF chart.
+- `/summary 21:00`: daily private report plus a seven-day interactive HTML chart.
 - `/export`: existing expense PDF/CSV reports; these exports remain expense-only.
 
 Today is labeled incomplete. Empty dates mean no records, not confirmed zero
@@ -274,3 +277,5 @@ Development tests require Node 24 for the built-in SQLite
 adapter. They apply both migrations to an in-memory database and exercise native
 channel payloads, edit ordering, rollback, exact savings, reminders and reports.
 `WRITE_DAILY_PDF=/tmp/daily.pdf npm test` writes a sample chart for visual review.
+
+See [interactive charts and live dashboard setup](docs/vps.md#interactive-charts-income-and-the-live-dashboard) for income table rows, HTTPS setup and browser editing.

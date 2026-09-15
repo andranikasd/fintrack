@@ -1,3 +1,4 @@
+import { categoryReview } from './handlers/category-review';
 import type { BackgroundWork } from './database';
 import { channelCommands, handleChannelPost } from './handlers/channel';
 import { goals } from './handlers/goals';
@@ -17,6 +18,7 @@ import { stats } from './handlers/stats';
 import type { Env } from './types';
 
 export const COMMANDS = [
+  { command: 'uncategorized', description: 'Assign categories to unknown items' },
   { command: 'today', description: 'Today spending and savings' },
   { command: 'yesterday', description: 'Yesterday spending and savings' },
   { command: 'week', description: 'Seven daily spending and savings bars' },
@@ -93,6 +95,7 @@ export function createBot(env: Env, exec: BackgroundWork): Bot<AppContext> {
   bot.use(channelCommands);
   bot.use(goals);
   bot.use(daily);
+  bot.use(categoryReview);
   bot.use(common);
   bot.use(menu);
   bot.use(categories);

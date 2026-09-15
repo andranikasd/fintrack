@@ -34,6 +34,7 @@ const api = async (method, body) => {
 };
 
 const COMMANDS = [
+  ['uncategorized', 'Assign categories to unknown items'],
   ['today', 'Today spending and savings'],
   ['yesterday', 'Yesterday spending and savings'],
   ['week', 'Seven daily spending and savings bars'],

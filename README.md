@@ -157,7 +157,14 @@ count or overwrite a newer revision. Multiple posts per day are added together.
 An empty table with its header removes all rows. An unreadable edit preserves the
 last valid records, notifies you privately, and appears in `/syncstatus`.
 Manual totals are checked against expense rows but never counted as expenses.
-Unknown items remain uncategorized. `/alias metro | Transport` teaches a category
+Unknown items remain uncategorized. `/today`, `/yesterday` and automatic daily
+summaries show **Categorize item** buttons for each distinct unknown label. Tap
+one to pick an existing category or create a new one. Matching channel entries
+are updated and future imports remember the choice. Run the report again to see
+the new breakdown. `/uncategorized` reviews all outstanding items; optionally
+append a date such as `/uncategorized 2026-09-15`.
+
+`/alias metro | Transport` teaches a category
 and updates matching imported items; category picks on imported rows also teach
 an alias. Commands and reports are used in the private bot chat.
 

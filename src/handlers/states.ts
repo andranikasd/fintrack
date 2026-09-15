@@ -1,3 +1,4 @@
+import { handleReviewCategoryName } from './category-review';
 import { Composer } from 'grammy';
 import type { AppContext } from '../context';
 import { handleBudgetAmount } from './budget';
@@ -17,6 +18,12 @@ states.on('message:text', async (ctx, next) => {
   if (!current) return next();
 
   switch (current.state) {
+    case 'review_new_category': {
+      const txId = Number(current.payload['txId']);
+      if (!Number.isSafeInteger(txId)) break;
+      await handleReviewCategoryName(ctx, txId, text);
+      return;
+    }
     case 'cat_new':
       await handleNewCategoryName(ctx, text);
       return;

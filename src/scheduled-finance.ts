@@ -1,3 +1,4 @@
+import { uncategorizedKeyboard } from './handlers/category-review';
 import type { Api } from 'grammy';
 import { InputFile } from 'grammy';
 import type { Db } from './db';
@@ -27,7 +28,7 @@ export async function runFinanceSchedule(db:Db,api:Api,user:{id:number;tz:string
     });
   }
   if(prefs.summary_time&&time>=prefs.summary_time) {
-    await deliver('daily-summary',async()=> {await api.sendMessage(user.id,await dailyReport(db,user.id,today,today,sign));});
+    await deliver('daily-summary',async()=> {await api.sendMessage(user.id,await dailyReport(db,user.id,today,today,sign), { reply_markup: await uncategorizedKeyboard(db,user.id,today) });});
     await deliver('daily-chart',async()=> {
       const bytes=await buildDailyChart(await dailySeries(db,user.id,addDays(today,-6),today),today);
       await api.sendDocument(user.id,new InputFile(bytes,`fintrack-week-${today}.pdf`),{caption:'Last seven days: spending and confirmed savings. Today is still in progress.'});

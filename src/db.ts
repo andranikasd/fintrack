@@ -212,6 +212,17 @@ export class Db {
     return results ?? [];
   }
 
+  /** One picker item per distinct unknown label; unnamed expenses stay separate. */
+  async uncategorized(userId: number, day: string | null, offset = 0, limit = 11): Promise<Array<{ id: number; label: string }>> {
+    const { results } = await this.d1.prepare(`
+      SELECT MIN(id) AS id, note AS label FROM transactions
+      WHERE user_id = ? AND category_id IS NULL AND (? IS NULL OR spent_on = ?)
+      GROUP BY CASE WHEN note = '' THEN 'tx:' || id ELSE 'label:' || lower(note) END
+      ORDER BY lower(note), MIN(id) LIMIT ? OFFSET ?
+    `).bind(userId, day, day, limit, offset).all<{ id: number; label: string }>();
+    return results;
+  }
+
   async recentTransactions(userId: number, limit: number): Promise<TxWithCategory[]> {
     const { results } = await this.d1
       .prepare(

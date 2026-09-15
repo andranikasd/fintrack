@@ -1,3 +1,4 @@
+import { uncategorizedKeyboard } from './category-review';
 import { Composer, InputFile } from 'grammy';
 import type { AppContext } from '../context';
 import type { Db } from '../db';
@@ -30,7 +31,9 @@ export async function dailyReport(db: Db,user: number,day: string,today: string,
 }
 for (const command of ['today','yesterday'] as const) daily.command(command,async ctx=> {
   const today = todayIn(ctx.tz);
-  await ctx.reply(await dailyReport(ctx.db,ctx.userId,command==='today'?today:addDays(today,-1),today,ctx.sign));
+  const day = command === 'today' ? today : addDays(today, -1);
+  const reply_markup = await uncategorizedKeyboard(ctx.db, ctx.userId, day);
+  await ctx.reply(await dailyReport(ctx.db,ctx.userId,day,today,ctx.sign), { reply_markup });
 });
 daily.command('syncstatus',async ctx=> {
   const errors = await ctx.db.finance.errors(ctx.userId);

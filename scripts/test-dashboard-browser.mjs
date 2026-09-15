@@ -12,6 +12,12 @@ const checks=`<script>
   const tick=()=>new Promise(resolve=>setTimeout(resolve,0));
   await tick();await document.fonts.ready;
   check(!document.getElementById('app').hidden,'Dashboard did not render');
+  const navigation=document.getElementById('mobile-view');navigation.value='accounts';navigation.dispatchEvent(new Event('change'));
+  check(!document.querySelector('[data-view=accounts]').hidden,'Mobile navigation did not switch sections');
+  navigation.value='overview';navigation.dispatchEvent(new Event('change'));
+  const analysis=document.querySelector('.analysis-disclosure');check(!analysis.open,'Extra analysis should start collapsed');
+  analysis.querySelector('summary').click();check(analysis.open,'Analysis disclosure did not open');analysis.querySelector('summary').click();
+  check(document.getElementById('wallet-accounts').textContent.includes('Card'),'Current account balance missing');
   check(document.documentElement.scrollWidth<=window.innerWidth+1,'Page overflows viewport: '+[...document.querySelectorAll('body *')].filter(n=>n.getBoundingClientRect().right>innerWidth+1).slice(0,8).map(n=>n.tagName+'.'+n.className+':'+Math.round(n.getBoundingClientRect().right)).join(', '));
   const search=document.getElementById('search');search.value='metro';search.dispatchEvent(new Event('input'));
   check(document.getElementById('total-expense').textContent.startsWith('9,000'),'Search did not filter totals');

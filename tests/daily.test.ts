@@ -9,7 +9,7 @@ import { runFinanceSchedule } from '../src/scheduled-finance';
 
 describe('daily reports and schedules',()=> {
   it('reports expenses, opening balance, deposits, withdrawals and budget separately',async()=> {
-    const {db}=testDb();await db.ensureUser(1); await db.accounts.create(1,'Test account',0,'2000-01-01','test-account:1');await db.setBudget(1,0,150000);
+    const {db}=testDb();await db.ensureUser(1); await db.accounts.create(1,'Test account',100000000,'2000-01-01','test-account:1');await db.setBudget(1,0,150000);
     await db.finance.setFunding(1,'shared',2000000);
     await db.finance.putGoal(1,'laptop',96038177,null,300000,20000000,null);
     const goal=(await db.finance.goals(1))[0]!;
@@ -24,7 +24,7 @@ describe('daily reports and schedules',()=> {
     expect(series[1]?.saved).toBe(5500.77);
   });
   it('sends local-time reminders once, does not book savings, and honors disabled times',async()=> {
-    const {db}=testDb();await db.ensureUser(1); await db.accounts.create(1,'Test account',0,'2000-01-01','test-account:1');await db.finance.putGoal(1,'laptop',96038177,null,300000,0,null);
+    const {db}=testDb();await db.ensureUser(1); await db.accounts.create(1,'Test account',100000000,'2000-01-01','test-account:1');await db.finance.putGoal(1,'laptop',96038177,null,300000,0,null);
     await db.finance.setTime(1,'reminder','20:00');
     const sent:unknown[]=[];const api={sendMessage:async(...args:unknown[])=>{sent.push(args);}} as unknown as Api;
     await runFinanceSchedule(db,api,{id:1,tz:'Asia/Yerevan'},'֏',new Date('2026-09-15T15:59Z'));expect(sent).toHaveLength(0);

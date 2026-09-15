@@ -79,7 +79,8 @@ export function createDashboardHandler(env: Env) {
       }
       json(404,{error:'Not found.'});
     } catch(error) {
-      json(error instanceof ActionError?error.status:500,{error:error instanceof ActionError?error.message:'Could not complete the request. Refresh and try again.'});
+      const insufficient=error instanceof Error && /Insufficient funds: this change would make an account balance negative\./.test(error.message);
+      json(error instanceof ActionError?error.status:insufficient?400:500,{error:error instanceof ActionError?error.message:insufficient?'Insufficient funds. This change would make an account balance negative. Correct the amount, date, account or funding.':'Could not complete the request. Refresh and try again.'});
     }
   };
 }

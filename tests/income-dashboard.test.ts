@@ -24,11 +24,11 @@ async function fixture(){
   await db.setBudget(1,0,150000);
   await db.finance.putGoal(1,'Laptop',96038177,null,300000,20000000,null);
   const goal=(await db.finance.goals(1))[0]!;
+  await db.income.add(1,'Salary',45000000,from,'salary');
   for(let i=0;i<30;i++){
     await db.addTransaction(1,i%2?transport.id:null,150+i*30,i%2?'metro':'groceries',addDays(from,i));
     if(i%6===0)await db.finance.contribute(1,goal.id,550077,addDays(from,i),'deposit'+i);
   }
-  await db.income.add(1,'Salary',45000000,from,'salary');
   await db.income.add(1,'Freelance',6500050,addDays(from,20),'freelance');
   return {db,d1,day,from,transport,goal};
 }
@@ -135,5 +135,12 @@ describe('private dashboard sign-in',()=>{
     const own=await call(`/api/dashboard?from=${from}&to=${day}`,'GET',headers);expect(own.data.records).toEqual([]);
     const denied=await call('/api/action','POST',{...headers,origin:'https://evil.example','content-type':'application/json'},{action:'budget',amount:'1',requestId:requestId()});
     expect(denied.status).toBe(403);expect(await db.budget(1,0)).toBe(150000);
+    await db.accounts.create(2,'Empty',0,day,'empty-account');
+    const empty=(await db.accounts.list(2,day))[0]!;
+    const unfunded=await call('/api/action','POST',{...headers,origin,'content-type':'application/json'},
+      {action:'add-expense',label:'coffee',amount:'1',day,accountId:empty.id,categoryId:null,requestId:requestId()});
+    expect(unfunded.status).toBe(400);expect(unfunded.data.error).toContain('Insufficient funds');
+    expect(await db.totalBetween(2,day,day)).toBe(0);
+
   });
 });

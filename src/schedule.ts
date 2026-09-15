@@ -2,7 +2,7 @@ import type { Api } from 'grammy';
 import { runFinanceSchedule } from './scheduled-finance';
 import { Db, OVERALL } from './db';
 import { monthLabel, monthOf, shiftMonth, todayIn } from './lib/dates';
-import { monthReport } from './handlers/stats';
+import { monthReport, richMonthReport } from './handlers/stats';
 import { money } from './lib/money';
 import type { Env } from './types';
 
@@ -26,8 +26,7 @@ export async function runScheduled(env: Env, api: Api): Promise<void> {
       const tail = limit
         ? `\n\nNew month, budget back to ${money(limit, sign)}.`
         : '\n\nNew month. Set a limit with /budget.';
-      await api.sendMessage(user.id, `📅 <b>${monthLabel(closed)} closed</b>\n\n${report}${tail}`, {
-        parse_mode: 'HTML',
+      await api.sendRichMessage(user.id, richMonthReport(`📅 <b>${monthLabel(closed)} closed</b>\n\n${report}${tail}`), {
         reply_markup: {
           inline_keyboard: [[{ text: '📄 PDF report', callback_data: `export:pdf:${closed}` }]],
         },

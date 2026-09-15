@@ -1,3 +1,4 @@
+import { richDailyReport } from './lib/rich-report';
 import { uncategorizedKeyboard } from './handlers/category-review';
 import type { Api } from 'grammy';
 import { InputFile } from 'grammy';
@@ -29,7 +30,7 @@ export async function runFinanceSchedule(db:Db,api:Api,user:{id:number;tz:string
     });
   }
   if(prefs.summary_time&&time>=prefs.summary_time) {
-    await deliver('daily-summary',async()=> {await api.sendMessage(user.id,await dailyReport(db,user.id,today,today,sign), { reply_markup: await uncategorizedKeyboard(db,user.id,today) });});
+    await deliver('daily-summary',async()=> {await api.sendRichMessage(user.id,richDailyReport(await dailyReport(db,user.id,today,today,sign)), { reply_markup: await uncategorizedKeyboard(db,user.id,today) });});
     await deliver('daily-chart',async()=> {
       const data=await dashboardData(db,user.id,user.tz,addDays(today,-6),today);
       const bytes=new TextEncoder().encode(renderDashboard(data,false));

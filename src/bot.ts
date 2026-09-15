@@ -92,7 +92,7 @@ export function createBot(env: Env, exec: BackgroundWork): Bot<AppContext> {
     try { await next(); }
     catch(error) {
       console.error('Private update failed',error);
-      await ctx.reply(error instanceof Error && /account|positive|ledger|Telegram|channel message/i.test(error.message)
+      await ctx.reply(error instanceof Error && /account|Insufficient funds|positive|ledger|Telegram|channel message/i.test(error.message)
         ? error.message : 'Could not complete this request. Check /last, /goal or /syncstatus before retrying.');
     }
   });

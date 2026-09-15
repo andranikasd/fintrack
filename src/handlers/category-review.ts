@@ -21,6 +21,14 @@ export async function uncategorizedKeyboard(db: Db, userId: number, day: string 
   return keyboard;
 }
 
+export async function promptCategory(ctx: AppContext, txId: number): Promise<void> {
+  const tx = await ctx.db.transaction(ctx.userId, txId);
+  if (!tx || tx.category_id !== null) return;
+  const keyboard = categoryKeyboard(await ctx.db.categories(ctx.userId), `review:set:${tx.id}`);
+  keyboard.row().text('➕ New category', `review:new:${tx.id}`);
+  await ctx.reply(`Which category fits “${tx.note || `expense #${tx.id}`}”?`, { reply_markup: keyboard });
+}
+
 async function sendItems(ctx: AppContext, day: string | null, offset = 0): Promise<void> {
   const keyboard = await uncategorizedKeyboard(ctx.db, ctx.userId, day, offset);
   await ctx.reply(keyboard ? 'Choose an item to categorize. I’ll remember matching channel items.' : 'No uncategorized items left.', {

@@ -1,3 +1,4 @@
+import { reportTable } from '../lib/rich-report';
 import { dashboardAction } from '../web/actions';
 import { accountEntry } from '../lib/account-entry';
 import { Composer, InlineKeyboard } from 'grammy';
@@ -14,7 +15,17 @@ income.command('account', async ctx=>{
     await ctx.reply('Account created. Record income with /income Salary @ '+match[1]+' 450000. Edit account details in /dashboard.');
   }catch(error){await ctx.reply(error instanceof Error?error.message:'Could not create account.');}
 });
-income.command('accounts',async ctx=>{const rows=await ctx.db.accounts.list(ctx.userId,todayIn(ctx.tz));await ctx.reply(rows.length?rows.map(a=>a.name+(a.archived?' (archived)':'')+': '+minorMoney(a.balance_minor,ctx.sign)+(a.passive_income?' · earns passive income':'')).join('\n')+'\n\nBalances include income, spending and savings transfers from the opening date. Legacy unassigned accounts need reconciliation. /dashboard to edit.':'No accounts yet. /account Card 100000');});
+income.command('accounts',async ctx=>{
+  const rows=await ctx.db.accounts.list(ctx.userId,todayIn(ctx.tz));
+  if(!rows.length){await ctx.reply('No accounts yet. /account Card 100000');return;}
+  await ctx.api.sendRichMessage(ctx.chat.id,{blocks:[
+    {type:'heading',size:2,text:'Your accounts'},
+    reportTable(['Account','Balance'],rows.map(a=>[a.name+(a.archived?' (archived)':''),minorMoney(a.balance_minor,ctx.sign)])),
+    {type:'paragraph',text:{type:'bold',text:'Total: '+minorMoney(rows.reduce((sum,a)=>sum+a.balance_minor,0),ctx.sign)}},
+    {type:'footer',text:'Balances include income, spending and savings transfers from the opening date. /dashboard to edit.'},
+    ...(rows.some(a=>a.balance_minor<0)?[{type:'paragraph' as const,text:'⚠ Historical negative balances need correction. Check the source entries or opening balance in /dashboard.'}]:[]),
+  ]});
+});
 income.command('income', async ctx => {
   const arg = ctx.match.trim();
   const today = todayIn(ctx.tz);
@@ -38,7 +49,12 @@ income.command('income', async ctx => {
   ]);
   const keyboard = new InlineKeyboard();
   for (const row of rows.filter(r=>r.source_chat===null)) keyboard.text(`Remove ${row.source.slice(0,30)} ${minorMoney(row.amount_minor,ctx.sign)}`,`income:remove:${row.id}`).row();
-  await ctx.reply(`Income · ${monthOf(today)}\nReceived: ${minorMoney(total,ctx.sign)}\n\n${sources.slice(0,15).map(r=>`${r.source}: ${minorMoney(r.total,ctx.sign)}`).join('\n') || 'No income recorded. /income Salary @ Card 450000'}\n\nIncome does not change your chosen spending budget.`, {reply_markup:keyboard});
+  await ctx.api.sendRichMessage(ctx.chat.id,{blocks:[
+    {type:'heading',size:2,text:`Income · ${monthOf(today)}`},
+    {type:'paragraph',text:{type:'bold',text:`Received: ${minorMoney(total,ctx.sign)}`}},
+    ...(sources.length?[reportTable(['Source','Received'],sources.slice(0,15).map(r=>[r.source,minorMoney(r.total,ctx.sign)]))]:[{type:'paragraph' as const,text:'No income recorded. /income Salary @ Card 450000'}]),
+    {type:'footer',text:'Income does not change your chosen spending budget.'},
+  ]},{reply_markup:keyboard});
 });
 income.callbackQuery(/^income:remove:(\d+)$/, async ctx => {
   await ctx.answerCallbackQuery();

@@ -1,3 +1,4 @@
+import { categoryKeyboard } from '../lib/keyboards';
 import { todayIn } from '../lib/dates';
 import { accountEntry } from '../lib/account-entry';
 import { Composer } from 'grammy';
@@ -95,14 +96,25 @@ export async function handleChannelPost(ctx: AppContext, db: Db, allowlist: Set<
   let changed: boolean;
   try { changed = await db.finance.syncPost(linked.user_id,post.chat.id,post.message_id,post.edit_date ?? post.date,ctx.update.update_id,error?null:parsed!.day,rows,error,setups,Boolean(suppliedPost),JSON.stringify({date:post.date,text:post.text,caption:post.caption,entities:post.entities,caption_entities:post.caption_entities,rich_message:post.rich_message})); }
   catch (err) {
-    if (!(err instanceof Error) || !/CHECK constraint failed/.test(err.message)) throw err;
-    error = 'This edit would make a savings balance negative. Correct the savings rows first.';
+    if (!(err instanceof Error) || !/CHECK constraint failed|Insufficient funds/.test(err.message)) throw err;
+    error = /Insufficient funds/.test(err.message) ? err.message : 'This edit would make a savings balance negative. Correct the savings rows first.';
     changed = await db.finance.syncPost(linked.user_id,post.chat.id,post.message_id,post.edit_date ?? post.date,ctx.update.update_id,null,[],error);
   }
   if (!changed) return true;
   if (error) {
     await ctx.api.sendMessage(linked.user_id,`Could not sync channel post #${post.message_id}: ${error}\nThe last valid records are preserved. Correct the post and edit again.`);
   } else {
+    if (!suppliedPost) {
+      const unknown = rows.find(r=>!r.income && r.goalId===undefined && r.categoryId===null);
+      if (unknown) {
+        const tx=(await db.uncategorized(linked.user_id,parsed!.day,0,201)).find(r=>r.label.toLowerCase()===unknown.label.toLowerCase());
+        if (tx) {
+          const keyboard=categoryKeyboard(await db.categories(linked.user_id),`review:set:${tx.id}`);
+          keyboard.row().text('➕ New category',`review:new:${tx.id}`);
+          await ctx.api.sendMessage(linked.user_id,`Which category fits “${tx.label}”?`,{reply_markup:keyboard});
+        }
+      }
+    }
     if (parsed!.warning) await ctx.api.sendMessage(linked.user_id,`Post #${post.message_id}: ${parsed!.warning}`);
     for (const category of new Set(rows.filter(r=>r.goalId===undefined&&!r.income).map(r=>r.categoryId))) {
       await checkBudgets(db,ctx.api,linked.user_id,linked.user_id,parsed!.day,category,sign);
@@ -117,5 +129,5 @@ channelCommands.command('forgetpost', async ctx => {
   try {
     await ctx.db.finance.forgetPost(ctx.userId,Number(m[1]),Number(m[2]));
     await ctx.reply('Removed that post’s records. Editing the original post again will reimport it.');
-  } catch { await ctx.reply('Cannot remove it because this would make a savings balance negative. Correct withdrawals first.'); }
+  } catch(error) { await ctx.reply(error instanceof Error && /Insufficient funds/.test(error.message) ? error.message : 'Cannot remove it because this would make a savings balance negative. Correct withdrawals first.'); }
 });

@@ -57,16 +57,22 @@ export class FinanceDb {
     }
     if (!error) statements.push(this.db.prepare(`UPDATE goals SET opening_minor=-1
       WHERE user_id=? AND opening_minor+COALESCE((SELECT SUM(amount_minor) FROM savings WHERE goal_id=goals.id),0)<0 AND ${guard}`).bind(user,chat,message,nonce));
-    const result = await this.db.batch(statements);
-    return (result[0]?.meta.changes ?? 0) > 0;
+    const result = await this.db.batch([
+      this.db.prepare('INSERT INTO account_balance_batches(user_id) VALUES(?)').bind(user),
+      ...statements,
+      this.db.prepare('DELETE FROM account_balance_batches WHERE user_id=?').bind(user),
+    ]);
+    return (result[1]?.meta.changes ?? 0) > 0;
   }
   async forgetPost(user: number, chat: number, message: number) {
     await this.db.batch([
+      this.db.prepare('INSERT INTO account_balance_batches(user_id) VALUES(?)').bind(user),
       this.db.prepare('DELETE FROM transactions WHERE user_id=? AND source_chat=? AND source_message=?').bind(user,chat,message),
       this.db.prepare('DELETE FROM savings WHERE user_id=? AND source_chat=? AND source_message=?').bind(user,chat,message),
       this.db.prepare('DELETE FROM income WHERE user_id=? AND source_chat=? AND source_message=?').bind(user,chat,message),
       this.db.prepare('UPDATE channel_posts SET error=NULL,spent_on=NULL,content=NULL,bot_managed=0 WHERE user_id=? AND chat_id=? AND message_id=?').bind(user,chat,message),
       this.db.prepare('UPDATE goals SET opening_minor=-1 WHERE user_id=? AND opening_minor+COALESCE((SELECT SUM(amount_minor) FROM savings WHERE goal_id=goals.id),0)<0').bind(user),
+      this.db.prepare('DELETE FROM account_balance_batches WHERE user_id=?').bind(user),
     ]);
   }
   async preferences(user: number): Promise<Preferences> {

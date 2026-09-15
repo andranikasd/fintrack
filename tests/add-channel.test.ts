@@ -8,7 +8,7 @@ const envFor = (d1: Env['DB']): Env => ({DB:d1,BOT_TOKEN:'test',BOT_INFO:JSON.st
 
 describe('/add channel workflow', () => {
   it('asks for an account and then creates a daily channel table', async () => {
-    const {db,d1}=testDb(); await db.ensureUser(1); await db.accounts.create(1,'Card',0,todayIn('Asia/Yerevan'),'setup');
+    const {db,d1}=testDb(); await db.ensureUser(1); await db.accounts.create(1,'Card',100000,todayIn('Asia/Yerevan'),'setup');
     await db.finance.link(-1001,1,'Diary'); const sent:any[]=[];
     const bot=createBot(envFor(d1),{waitUntil:()=>{}}); bot.api.config.use(async (prev,next,payload)=>{sent.push({method:next,payload}); if(next==='sendRichMessage')return {ok:true,result:{message_id:44,date:Math.floor(Date.now()/1000),chat:{id:-1001,type:'channel',title:'Diary'},rich_message:(payload as any).rich_message}} as never; return {ok:true,result:true} as never;});
     const update=(id:number,text:string)=>({update_id:id,message:{message_id:id,date:Math.floor(Date.now()/1000),from:{id:1,is_bot:false,first_name:'User'},chat:{id:1,type:'private' as const,first_name:'User'},text,entities:[{type:'bot_command' as const,offset:0,length:text.split(' ')[0]!.length}]}});
@@ -16,13 +16,23 @@ describe('/add channel workflow', () => {
     expect(sent.some(x=>x.payload?.reply_markup?.inline_keyboard?.flat().some((b:any)=>String(b.callback_data).startsWith('addaccount:')))).toBe(true);
     await bot.handleUpdate({update_id:2,callback_query:{id:'q',from:{id:1,is_bot:false,first_name:'User'},chat_instance:'x',data:sent.find(x=>x.payload?.reply_markup)?.payload.reply_markup.inline_keyboard[0][0].callback_data,message:{message_id:10,date:1,chat:{id:1,type:'private' as const},text:'pick'}}} as any);
     const message=sent.find(x=>x.method==='sendRichMessage'&&x.payload?.chat_id===-1001); expect(message?.payload?.rich_message?.blocks?.[1]?.type).toBe('table'); expect(JSON.stringify(message?.payload?.rich_message)).toContain('metro @ Card'); expect(JSON.stringify(message?.payload?.rich_message)).toContain('150'); expect(await db.totalBetween(1,todayIn('Asia/Yerevan'),todayIn('Asia/Yerevan'))).toBe(150);
+    const categoryPrompt=sent.find(x=>x.payload?.text?.includes('Which category fits'));
+    expect(categoryPrompt?.payload.reply_markup.inline_keyboard.flat().some((b:any)=>b.callback_data.startsWith('review:set:'))).toBe(true);
   });
   it('edits an existing source post in place and preserves its existing rows', async () => {
-    const {db,d1}=testDb(); await db.ensureUser(1); await db.accounts.create(1,'Card',0,todayIn('Asia/Yerevan'),'setup'); await db.finance.link(-1001,1,'Diary');
+    const {db,d1}=testDb(); await db.ensureUser(1); await db.accounts.create(1,'Card',100000,todayIn('Asia/Yerevan'),'setup'); await db.finance.link(-1001,1,'Diary');
     await db.finance.syncPost(1,-1001,77,1,1,todayIn('Asia/Yerevan'),[{categoryId:null,label:'coffee',amount:200,accountId:1}],null,[],false,JSON.stringify({date:Math.floor(Date.now()/1000),rich_message:{blocks:[{type:'paragraph',text:todayIn('Asia/Yerevan')},{type:'table',is_bordered:true,cells:[[{text:'Item',is_header:true},{text:'price',is_header:true}],[{text:'coffee @ Card'},{text:'200'}]]},{type:'paragraph',text:'Total: 200'}]}}));
     const calls:any[]=[];const bot=createBot(envFor(d1),{waitUntil:()=>{}}); bot.api.config.use(async (prev,next,payload)=>{calls.push({method:next,payload});if(next==='editMessageText')return {ok:true,result:{message_id:77,date:1,edit_date:Math.floor(Date.now()/1000),chat:{id:-1001,type:'channel',title:'Diary'},rich_message:(payload as any).rich_message}} as never;return {ok:true,result:true} as never;});
     await bot.handleUpdate({update_id:2,message:{message_id:2,date:Math.floor(Date.now()/1000),from:{id:1,is_bot:false,first_name:'User'},chat:{id:1,type:'private' as const},text:'/add metro 150 @ Card',entities:[{type:'bot_command' as const,offset:0,length:4}]}} as any);
     const edit=calls.find(x=>x.method==='editMessageText');expect(edit?.payload?.chat_id).toBe(-1001);expect(edit?.payload?.message_id).toBe(77);expect(edit?.payload?.rich_message?.blocks?.[1]?.type).toBe('table');expect(JSON.stringify(edit?.payload?.rich_message)).toContain('coffee @ Card');expect(JSON.stringify(edit?.payload?.rich_message)).toContain('metro @ Card');expect(JSON.stringify(edit?.payload?.rich_message)).toContain('Total: 350');expect(await db.totalBetween(1,todayIn('Asia/Yerevan'),todayIn('Asia/Yerevan'))).toBe(350);
+  });
+  it('refuses an unfunded /add before sending anything to the channel',async()=>{
+    const {db,d1}=testDb();await db.ensureUser(1);await db.accounts.create(1,'Card',10000,todayIn('Asia/Yerevan'),'setup');await db.finance.link(-1001,1,'Diary');
+    const calls:any[]=[];const bot=createBot(envFor(d1),{waitUntil:()=>{}});bot.api.config.use(async(_next,method,payload)=>{calls.push({method,payload});return {ok:true,result:true} as never;});
+    await bot.handleUpdate({update_id:9,message:{message_id:9,date:Math.floor(Date.now()/1000),from:{id:1,is_bot:false,first_name:'User'},chat:{id:1,type:'private'},text:'/add 40000000 caffe @ Card',entities:[{type:'bot_command',offset:0,length:4}]}} as any);
+    expect(calls.some(c=>c.payload.chat_id===-1001)).toBe(false);
+    expect(calls.some(c=>c.payload.text?.includes('Insufficient funds in Card'))).toBe(true);
+    expect(await db.totalBetween(1,todayIn('Asia/Yerevan'),todayIn('Asia/Yerevan'))).toBe(0);
   });
   it('creates an account from a channel row and does not count it as spending', async()=>{
     const {db,d1}=testDb();await db.ensureUser(1);await db.finance.link(-1001,1,'Diary');const bot=createBot(envFor(d1),{waitUntil:()=>{}});bot.api.config.use(async()=>({ok:true,result:true} as never));

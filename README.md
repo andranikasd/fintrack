@@ -22,8 +22,14 @@ See [VPS setup, updates and recovery](docs/vps.md) for the production guide.
 - **Logging an expense is one message**: `1500 cafe latte`
 - **Categories** you create, rename, archive or delete from the chat
 - **Monthly budgets**, overall and per category, with alerts at 80 / 100 / 120 / 150 / 200 %
-- **PDF reports** with a donut chart, daily columns, a cumulative-vs-budget line,
-  a six-month trend, a category table and the full expense list — plus CSV
+- **PDF reports** with account reconciliation, income sources, savings progress,
+  spending charts, category budgets and the complete transaction list with wrapped
+  descriptions. Reports support up to 10,000 records; larger exports require a
+  shorter date range. CSV exports are also available.
+- **Native Telegram tables** for account balances, expense confirmations, daily and
+  monthly summaries, recent expenses, income, goals and statistics.
+- **Dashboard** with grouped navigation, account balances, mobile section selection,
+  searchable activity and expandable spending insights.
 
 ## Talking to the bot
 
@@ -157,7 +163,9 @@ count or overwrite a newer revision. Multiple posts per day are added together.
 An empty table with its header removes all rows. An unreadable edit preserves the
 last valid records, notifies you privately, and appears in `/syncstatus`.
 Manual totals are checked against expense rows but never counted as expenses.
-Unknown items remain uncategorized. `/today`, `/yesterday` and automatic daily
+Unknown items immediately open a category picker after `/add`, private expense
+entry, or channel import. Pick an existing category or create one; channel choices
+are remembered for matching items. `/today`, `/yesterday` and automatic daily
 summaries show **Categorize item** buttons for each distinct unknown label. Tap
 one to pick an existing category or create a new one. Matching channel entries
 are updated and future imports remember the choice. Run the report again to see
@@ -252,7 +260,9 @@ notification, but cannot duplicate a confirmed contribution.
 - `/income Salary @ Card 450000`: record income; `/income` shows monthly income by source.
 - `/month`: spending, net savings and budget availability.
 - `/summary 21:00`: daily private report plus a seven-day interactive HTML chart.
-- `/export`: existing expense PDF/CSV reports; these exports remain expense-only.
+- `/export`: detailed financial PDF reports with account reconciliation, income,
+  spending charts, category budgets, savings goals and complete activity. CSV exports
+  remain expense-only. `/chartpdf` uses the same detailed PDF format for a chosen range.
 
 Today is labeled incomplete. Empty dates mean no records, not confirmed zero
 spending. Charts exclude the opening savings balance.
@@ -295,8 +305,11 @@ and savings deposits, plus savings withdrawals, from its opening date onward.
 The opening balance is before that day's activity. Older activity is already
 represented by the opening balance and is not counted twice. Opening goal savings
 represent money saved before tracking began, not a new transfer. These are recorded
-balances; the bot does not move money at a bank. Negative account balances remain
-visible so missing income or real overdrafts can be reconciled.
+balances; the bot does not move money at a bank. New entries and edits cannot make an account balance negative, including on an
+earlier recorded date. Savings deposits, income removal, history undo and channel
+replacements follow the same rule. An exact zero balance is allowed. Migration
+`0008_nonnegative_accounts.sql` preserves historical data; correct existing deficits
+using their source entries or the account opening balance before changing that account.
 
 Migration `0007_account_ledger.sql` adds account ownership to savings and database
 checks for financial entries. Historical unassigned records are preserved in

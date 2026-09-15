@@ -9,7 +9,7 @@ import { workspaceAction } from '../src/web/workspace-actions';
 import { todayIn,addDays } from '../src/lib/dates';
 import { dashboardData } from '../src/web/data';
 const tz='Asia/Yerevan';
-async function fixture(){const {db,d1}=testDb();await db.ensureUser(1); await db.accounts.create(1,'Test account',0,'2000-01-01','test-account:1');await db.ensureUser(2); await db.accounts.create(2,'Test account',0,'2000-01-01','test-account:2');const today=todayIn(tz);const act=(body:Record<string,unknown>,user=1)=>dashboardAction(db,d1,user,tz,{requestId:crypto.randomUUID(),...body});return {db,d1,act,today};}
+async function fixture(){const {db,d1}=testDb();await db.ensureUser(1); await db.accounts.create(1,'Test account',100000000,'2000-01-01','test-account:1');await db.ensureUser(2); await db.accounts.create(2,'Test account',100000000,'2000-01-01','test-account:2');const today=todayIn(tz);const act=(body:Record<string,unknown>,user=1)=>dashboardAction(db,d1,user,tz,{requestId:crypto.randomUUID(),...body});return {db,d1,act,today};}
 describe('dashboard workspace',()=>{
  it('previews rules without writes, combines variations, and applies categories atomically',async()=>{
   const {db,act,today}=await fixture(),category=(await db.categories(1))[0]!;

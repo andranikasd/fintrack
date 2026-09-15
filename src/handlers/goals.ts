@@ -1,3 +1,4 @@
+import { richDailyReport } from '../lib/rich-report';
 import { accountEntry } from '../lib/account-entry';
 import { Composer, InlineKeyboard } from 'grammy';
 import type { AppContext } from '../context';
@@ -58,7 +59,7 @@ goals.command('goal', async ctx => {
   }
   const status = await financialStatus(ctx.db,ctx.userId,todayIn(ctx.tz));
   if (!status.plans.length) { await ctx.reply(USAGE); return; }
-  for (const plan of status.plans) await ctx.reply(goalText(plan,ctx.sign));
+  for (const plan of status.plans) await ctx.api.sendRichMessage(ctx.chat.id,richDailyReport(goalText(plan,ctx.sign)));
   await ctx.reply(`Funding: ${status.prefs.funding}. Reserve: ${minorMoney(status.prefs.reserve_minor,ctx.sign)}.\nAmounts are plans, not automatic transfers. /save confirms money actually moved.\n/goalhelp for setup and preferences.`);
 });
 goals.command('goalhelp',ctx=>ctx.reply(USAGE));

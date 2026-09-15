@@ -1,3 +1,5 @@
+import { reportTable } from '../lib/rich-report';
+import { promptCategory } from './category-review';
 import { appendChannelExpense } from '../lib/channel-table';
 import { handleChannelPost } from './channel';
 import { Composer, InlineKeyboard } from 'grammy';
@@ -44,15 +46,16 @@ function richDailyTable(day: string, rows: Array<[string, string]>, total: numbe
   };
 }
 
-function accountKeyboard(accounts: Array<{id:number;name:string}>, prefix:string, request:string): InlineKeyboard {
+function accountKeyboard(accounts: Array<{id:number;name:string;balance_minor?:number}>, prefix:string, request:string): InlineKeyboard {
   const kb = new InlineKeyboard();
-  for (const account of accounts) kb.text(account.name, `${prefix}:${account.id}:${request}`).row();
+  for (const account of accounts) kb.text(account.name+(account.balance_minor===undefined?'':` · ${minorMoney(account.balance_minor,'֏')}`), `${prefix}:${account.id}:${request}`).row();
   return kb;
 }
 
 async function addToChannel(ctx: AppContext, parsed: {amount:number; rest:string; spentOn:string;event?:string}, accountId: number): Promise<void> {
   const account = await ctx.db.accounts.get(ctx.userId, accountId);
   if (!account || account.archived) { await ctx.reply('That account is unavailable. Use /accounts and try again.'); return; }
+  await ctx.db.accounts.assertCanSpend(ctx.userId,accountId,parsed.amount*100,parsed.spentOn);
   const channels=await ctx.db.finance.channels(ctx.userId);
   if(channels.length>1) { await ctx.reply('More than one channel is linked. Keep one linked channel for /add so the destination is unambiguous.'); return; }
   const linked = channels[0];
@@ -72,6 +75,7 @@ async function addToChannel(ctx: AppContext, parsed: {amount:number; rest:string
   catch(error) { if(error instanceof Error && /UNIQUE/.test(error.message)) { await ctx.reply('Another /add is still updating this channel. Try again after it finishes.'); return; } throw error; }
   if(!claimed.meta.changes) { await ctx.reply('This /add request was already handled or attempted. Check the channel and /syncstatus before sending a new command.'); return; }
   let completed=false;
+  let categoryTxId: number | null = null;
   try {
   const post = await ctx.db.finance.latestPostForDay(ctx.userId, parsed.spentOn, linked.chat_id);
   async function importSent(message: import('grammy/types').Message) {
@@ -79,7 +83,15 @@ async function addToChannel(ctx: AppContext, parsed: {amount:number; rest:string
     await handleChannelPost(ctx,ctx.db,new Set([ctx.userId]),ctx.sign,message);
     const status=await ctx.db.finance.post(message.chat.id,message.message_id);
     if(!status || status.error) throw new Error(status?.error || 'Channel message was sent but could not be imported. Edit it to retry.');
+    categoryTxId = await ctx.env.DB.prepare('SELECT id FROM transactions WHERE user_id=? AND source_chat=? AND source_message=? AND category_id IS NULL AND note=? AND amount=? AND account_id=? ORDER BY id DESC LIMIT 1').bind(ctx.userId,message.chat.id,message.message_id,item,parsed.amount,accountId).first<number>('id');
     await ctx.env.DB.prepare('UPDATE channel_posts SET bot_managed=1 WHERE user_id=? AND chat_id=? AND message_id=?').bind(ctx.userId,message.chat.id,message.message_id).run();
+  }
+  async function addedReceipt() {
+    await ctx.api.sendRichMessage(ctx.chat!.id,{blocks:[
+      {type:'heading',size:3,text:'Added to your diary'},
+      reportTable(['Item','Amount'],[[item,money(parsed.amount,ctx.sign)]]),
+      {type:'footer',text:`${account!.name} · ${parsed.spentOn}`},
+    ]});
   }
   if (post) {
     if(!post.content) throw new Error('Edit the original channel post once so the bot can preserve its formatting, then use /add again.');
@@ -91,15 +103,16 @@ async function addToChannel(ctx: AppContext, parsed: {amount:number; rest:string
       : await ctx.api.editMessageText(post.chat_id,post.message_id,next.text!,{entities:next.entities});
     if(typeof edited==='boolean') throw new Error('Telegram did not return the edited channel message. Check /syncstatus.');
     await importSent(edited);
-    await ctx.reply(`Added ${parsed.amount} ֏ ${item} to the ${parsed.spentOn} channel table.`);
+    await addedReceipt();
   } else {
     const sent = await ctx.api.sendRichMessage(linked.chat_id, richDailyTable(parsed.spentOn, [[`${item}${suffix}`, String(parsed.amount)]], parsed.amount));
     await importSent(sent);
-    await ctx.reply(`Created the ${parsed.spentOn} channel table and added ${parsed.amount} ֏ ${item}.`);
+    await addedReceipt();
 
   }
   completed=true;
   await ctx.db.clearState(ctx.userId);
+  if (categoryTxId !== null) await promptCategory(ctx, categoryTxId);
   } finally {
     await ctx.env.DB.prepare('UPDATE channel_add_requests SET status=? WHERE event_key=? AND user_id=?').bind(completed?'done':'uncertain',event,ctx.userId).run();
   }
@@ -123,7 +136,6 @@ entry.callbackQuery(/^addaccount:(\d+):([a-f0-9]{24})$/, async ctx => {
   const accountId = Number(ctx.match[1]);
   if (!state || state.state !== 'add_account' || state.payload.request!==ctx.match[2]) { await ctx.answerCallbackQuery({text:'This request expired. Use /add again.',show_alert:true}); return; }
   await ctx.answerCallbackQuery();
-  await ctx.db.clearState(ctx.userId);
   const p = state.payload;
   await addToChannel(ctx,{amount:Number(p.amount),rest:String(p.rest),spentOn:String(p.spentOn),event:String(p.event)},accountId);
 });
@@ -158,16 +170,20 @@ async function confirm(ctx: AppContext, txId: number, needsCategory: boolean): P
   const spent = await ctx.db.totalBetween(ctx.userId, monthStart(period), monthEnd(period));
   const budget = (await ctx.db.budget(ctx.userId, OVERALL)) ?? 0;
 
-  const lines = [txLine(tx, ctx.sign, today)];
   const status = await financialStatus(ctx.db,ctx.userId,today);
   const pace = status.prefs.funding === 'shared' || status.prefs.reserve_minor>0 ? (status.available === null ? null : `Available after savings/reserve: ${minorMoney(status.available,ctx.sign)}`) : paceLine(spent, budget, today, ctx.sign);
-  if (pace) lines.push(pace);
-  else lines.push(`Month so far: <b>${money(spent, ctx.sign)}</b>`);
 
-  await ctx.reply(lines.join('\n'), {
-    parse_mode: 'HTML',
-    reply_markup: afterKeyboard(txId, needsCategory),
-  });
+  const account = tx.account_id ? await ctx.db.accounts.get(ctx.userId,tx.account_id) : null;
+  await ctx.api.sendRichMessage(ctx.chat!.id, {blocks:[
+    {type:'heading',size:3,text:'Expense recorded'},
+    reportTable(['Detail','Value'],[
+      ['Amount',money(tx.amount,ctx.sign)],['Item',tx.note||tx.category_name||'Expense'],
+      ['Category',tx.category_name||'Choose below'],['Account',account?.name||'Unassigned'],['Date',tx.spent_on],
+    ]),
+    {type:'footer',text:pace ? pace.replace(/<[^>]*>/g,'') : `Month so far: ${money(spent,ctx.sign)}`},
+  ]},{reply_markup:afterKeyboard(txId,needsCategory)});
+
+  if (needsCategory) await promptCategory(ctx, txId);
 
   await checkBudgets(
     ctx.db,
@@ -181,9 +197,9 @@ async function confirm(ctx: AppContext, txId: number, needsCategory: boolean): P
 }
 
 /** Free-text expense entry. Registered last so commands and states win. */
-entry.on('message:text', async (ctx) => {
+entry.on('message:text', async (ctx, next) => {
   const text = ctx.message.text.trim();
-  if (text.startsWith('/')) return;
+  if (text.startsWith('/')) return next();
 
   const parsed = parseEntry(text, ctx.tz);
   if (!parsed) {
@@ -223,9 +239,10 @@ entry.callbackQuery(/^entryaccount:(\d+):([a-f0-9]{24})$/, async ctx => {
   if (!state || state.state!=='entry_account'||state.payload.request!==ctx.match[2]) { await ctx.answerCallbackQuery({text:'This request expired. Send the expense again.',show_alert:true}); return; }
   const account=await ctx.db.accounts.get(ctx.userId,accountId);
   if(!account||account.archived){await ctx.answerCallbackQuery({text:'Account unavailable.',show_alert:true});return;}
-  await ctx.answerCallbackQuery();await ctx.db.clearState(ctx.userId);
+  await ctx.answerCallbackQuery();
   const categories=await ctx.db.categories(ctx.userId),match=matchCategory(String(state.payload.rest).replace(/\s+@\s+.+$/,''),categories);
   const txId=await ctx.db.addTransaction(ctx.userId,match.category?.id??null,Number(state.payload.amount),match.note,String(state.payload.spentOn),account.id,String(state.payload.event));
+  await ctx.db.clearState(ctx.userId);
   await confirm(ctx,txId,match.category===null);
 });
 
@@ -303,18 +320,12 @@ entry.command('last', async (ctx) => {
     kb.text(`🗑 ${money(tx.amount, ctx.sign)}`, `del:${tx.id}`);
     if ((i + 1) % 2 === 0) kb.row();
   });
-  const body = rows
-    .map((tx) => {
-      const cat = tx.category_id
-        ? `${tx.category_emoji ?? ''} ${tx.category_name ?? ''}`.trim()
-        : '❓';
-      const when = tx.spent_on === today ? 'today' : prettyDate(tx.spent_on);
-      const note = tx.note ? ` · ${escapeHtml(tx.note)}` : '';
-      return `<b>${money(tx.amount, ctx.sign)}</b> · ${escapeHtml(cat)} · ${when}${note}`;
-    })
-    .join('\n');
-  await ctx.reply(`<b>Last ${rows.length}</b>\n${body}`, {
-    parse_mode: 'HTML',
-    reply_markup: kb,
-  });
+  await ctx.api.sendRichMessage(ctx.chat.id,{blocks:[
+    {type:'heading',size:2,text:`Last ${rows.length} expenses`},
+    reportTable(['Date','Item / category','Amount'],rows.map(tx=>[
+      tx.spent_on===today?'Today':prettyDate(tx.spent_on),
+      [tx.note,tx.category_name||'Uncategorized'].filter(Boolean).join(' · '),money(tx.amount,ctx.sign),
+    ])),
+    {type:'footer',text:'Use the buttons to remove a manual expense. Edit channel expenses in their source table.'},
+  ]},{reply_markup:kb});
 });

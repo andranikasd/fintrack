@@ -7,7 +7,7 @@ import { testDb } from './sqlite';
 
 async function setup() {
   const { db, d1 } = testDb();
-  await db.ensureUser(1); await db.accounts.create(1,'Test account',0,'2000-01-01','test-account:1');
+  await db.ensureUser(1); await db.accounts.create(1,'Test account',100000000,'2000-01-01','test-account:1');
   const day = todayIn('Asia/Yerevan');
   const now = Math.floor(Date.now() / 1000);
   await db.finance.link(-1001, 1, 'Expenses');
@@ -48,8 +48,9 @@ describe('category suggestions in reports', () => {
   it('shows one categorize button per unknown label and keeps spending unchanged', async () => {
     const { db, day, sent, command } = await setup();
     await command('/today');
-    const report = sent.find(r => r.method === 'sendMessage')!;
-    expect(report.payload.text).toContain('Spent: 1,050 ֏');
+    const report = sent.find(r => r.method === 'sendRichMessage')!;
+    const table = report.payload.rich_message.blocks.find((b:any) => b.type === 'table');
+    expect(table.cells.map((r:any[]) => r.map(c=>c.text))).toContainEqual(['Spent', '1,050 ֏']);
     const buttons = report.payload.reply_markup.inline_keyboard.flat();
     expect(buttons.map((b: any) => b.text)).toEqual(['Categorize duet', 'Categorize metro', 'Categorize redline']);
     expect(await db.totalBetween(1, day, day)).toBe(1050);

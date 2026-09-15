@@ -1,3 +1,4 @@
+import { richDailyReport, reportTable } from '../lib/rich-report';
 import { Composer, InlineKeyboard } from 'grammy';
 import type { AppContext } from '../context';
 import { OVERALL, type Db } from '../db';
@@ -84,6 +85,12 @@ export async function monthReport(
   return lines.join('\n');
 }
 
+export function richMonthReport(text: string) {
+  const plain=text.replace(/<code>[^<]*<\/code>\s*/g,'').replace(/<[^>]+>/g,'')
+    .replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&');
+  return richDailyReport(plain);
+}
+
 function monthKeyboard(period: string): InlineKeyboard {
   return new InlineKeyboard()
     .text('◀️', `month:${shiftMonth(period, -1)}`)
@@ -94,7 +101,7 @@ function monthKeyboard(period: string): InlineKeyboard {
 export async function sendMonth(ctx: AppContext): Promise<void> {
   const period = monthOf(todayIn(ctx.tz));
   const text = await monthReport(ctx.db, ctx.userId, period, ctx.tz, ctx.sign);
-  await ctx.reply(text, { parse_mode: 'HTML', reply_markup: monthKeyboard(period) });
+  await ctx.api.sendRichMessage(ctx.chat!.id,richMonthReport(text), { reply_markup: monthKeyboard(period) });
 }
 
 stats.command('month', sendMonth);
@@ -103,7 +110,7 @@ stats.callbackQuery(/^month:(\d{4}-\d{2})$/, async (ctx) => {
   const period = ctx.match[1]!;
   await ctx.answerCallbackQuery();
   const text = await monthReport(ctx.db, ctx.userId, period, ctx.tz, ctx.sign);
-  await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: monthKeyboard(period) });
+  await ctx.editMessageText(richMonthReport(text), { reply_markup: monthKeyboard(period) });
 });
 
 export async function sendStats(ctx: AppContext): Promise<void> {
@@ -123,31 +130,18 @@ export async function sendStats(ctx: AppContext): Promise<void> {
     const p = shiftMonth(current, -i);
     series.push({ period: p, total: byPeriod.get(p) ?? 0 });
   }
-  const max = Math.max(...series.map((s) => s.total), 1);
-  const lines = ['<b>Last 6 months</b>'];
-  for (const s of series) {
-    const width = Math.max(0, Math.round((s.total / max) * 12));
-    lines.push(
-      `<code>${BAR.repeat(width).padEnd(12)}</code> ${monthLabel(s.period).slice(0, 3)} ${s.period.slice(2, 4)} — ${money(s.total, ctx.sign)}`,
-    );
-  }
+  const sum=series.reduce((total,s)=>total+s.total,0);
+  const activeMonths=series.filter(s=>s.total>0).length||1;
+  const top=await ctx.db.byCategory(ctx.userId,monthStart(first),monthEnd(current));
+  await ctx.api.sendRichMessage(ctx.chat!.id,{blocks:[
+    {type:'heading',size:2,text:'Last 6 months'},
+    reportTable(['Month','Spending'],series.map(s=>[monthLabel(s.period),money(s.total,ctx.sign)])),
+    {type:'paragraph',text:{type:'bold',text:`Average recorded month: ${money(Math.round(sum/activeMonths),ctx.sign)}`}},
+    {type:'heading',size:3,text:'Top categories'},
+    reportTable(['Category','Spending'],top.slice(0,5).map(c=>[c.name,money(c.total,ctx.sign)])),
+    {type:'footer',text:'The current month is incomplete. Months without recorded spending are excluded from the average.'},
+  ]},{reply_markup:new InlineKeyboard().text('📄 PDF, 6 months',`export:pdf6:${current}`)});
 
-  const sum = series.reduce((a, s) => a + s.total, 0);
-  const nonEmpty = series.filter((s) => s.total > 0).length || 1;
-  lines.push('', `Average month: <b>${money(Math.round(sum / nonEmpty), ctx.sign)}</b>`);
-
-  const top = await ctx.db.byCategory(ctx.userId, monthStart(first), monthEnd(current));
-  if (top.length) {
-    lines.push('', '<b>Top categories, 6 months</b>');
-    for (const c of top.slice(0, 5)) {
-      lines.push(`${escapeHtml(`${c.emoji} ${c.name}`.trim())} — ${money(c.total, ctx.sign)}`);
-    }
-  }
-
-  await ctx.reply(lines.join('\n'), {
-    parse_mode: 'HTML',
-    reply_markup: new InlineKeyboard().text('📄 PDF, 6 months', `export:pdf6:${current}`),
-  });
 }
 
 stats.command('stats', sendStats);

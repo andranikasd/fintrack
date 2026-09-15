@@ -2,6 +2,7 @@ import { Composer, InlineKeyboard, InputFile } from 'grammy';
 import type { AppContext } from '../context';
 import { OVERALL, type Db } from '../db';
 import {
+  addDays,
   monthEnd,
   monthLabel,
   monthOf,
@@ -85,19 +86,25 @@ export async function collectReport(
   currency: string,
   today: string,
 ): Promise<ReportData> {
+  to = to > today ? today : to;
+  if (from > to) throw new Error('The report period has not started yet.');
   const trendFrom = monthStart(shiftMonth(monthOf(to), -5));
-  const [total, byCategory, byDay, byMonth, transactions, budgets] = await Promise.all([
+  const [total, byCategory, byDay, byMonth, transactions, budgets, incomes, savings, accounts, openingAccounts, goals] = await Promise.all([
     db.totalBetween(userId, from, to),
     db.byCategory(userId, from, to),
     db.byDay(userId, from, to),
     db.byMonth(userId, trendFrom < from ? trendFrom : from, to),
-    db.transactionsBetween(userId, from, to),
+    db.transactionsBetween(userId, from, to, 10001),
     db.budgets(userId),
+    db.income.list(userId,from,to),db.finance.savingsEntries(userId,from,to),
+    db.accounts.list(userId,to),db.accounts.list(userId,addDays(from,-1)),db.finance.goals(userId),
   ]);
 
+  if (transactions.length + incomes.length + savings.length > 10000) throw new Error('More than 10,000 records. Choose a shorter report period.');
   const categoryBudgets = new Map<number, number>();
   let budgetOverall = 0;
-  for (const b of budgets) {
+  // A partial-month range cannot be compared with a whole-month spending limit.
+  for (const b of (singleMonth && from === monthStart(singleMonth) ? budgets : [])) {
     if (b.category_id === OVERALL) budgetOverall = b.amount;
     else categoryBudgets.set(b.category_id, b.amount);
   }
@@ -116,6 +123,7 @@ export async function collectReport(
     currency,
     generatedOn: today,
     singleMonth,
+    finance: { incomes, savings, accounts, openingAccounts, goals },
   };
 }
 
@@ -136,14 +144,14 @@ async function sendPdf(
     ctx.env.CURRENCY,
     todayIn(ctx.tz),
   );
-  if (data.transactions.length === 0) {
+  if (data.transactions.length === 0 && !data.finance?.incomes.length && !data.finance?.savings.length && !data.finance?.accounts.length) {
     await ctx.api.sendMessage(ctx.chat!.id, `Nothing recorded in ${label}.`);
     return;
   }
   const bytes = await buildReport(data);
   const name = `fintrack-${singleMonth ?? `${from}_${to}`}.pdf`;
   await ctx.api.sendDocument(ctx.chat!.id, new InputFile(bytes, name), {
-    caption: `${label} · ${data.transactions.length} expenses`,
+    caption: `${label} · Accounts, cash flow, budgets, savings and full transaction details`,
   });
 }
 

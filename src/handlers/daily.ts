@@ -1,3 +1,4 @@
+import { richDailyReport, reportTable } from '../lib/rich-report';
 import { uncategorizedKeyboard } from './category-review';
 import { Composer, InputFile } from 'grammy';
 import type { AppContext } from '../context';
@@ -7,7 +8,8 @@ import { financialStatus } from '../lib/finance';
 import { money } from '../lib/money';
 import { minorMoney } from '../lib/savings';
 import { goalText } from './goals';
-import { buildDailyChart } from '../pdf/daily';
+import { buildReport } from '../pdf/report';
+import { collectReport } from './export';
 
 export const daily = new Composer<AppContext>();
 export async function dailyReport(db: Db,user: number,day: string,today: string,sign: string): Promise<string> {
@@ -34,7 +36,7 @@ for (const command of ['today','yesterday'] as const) daily.command(command,asyn
   const today = todayIn(ctx.tz);
   const day = command === 'today' ? today : addDays(today, -1);
   const reply_markup = await uncategorizedKeyboard(ctx.db, ctx.userId, day);
-  await ctx.reply(await dailyReport(ctx.db,ctx.userId,day,today,ctx.sign), { reply_markup });
+  await ctx.api.sendRichMessage(ctx.chat.id, richDailyReport(await dailyReport(ctx.db,ctx.userId,day,today,ctx.sign)), { reply_markup });
 });
 daily.command('syncstatus',async ctx=> {
   const errors = await ctx.db.finance.errors(ctx.userId);
@@ -67,9 +69,11 @@ export async function dailySeries(db: Db,user: number,from: string,to: string) {
 daily.command('week',async ctx=> {
   const today = todayIn(ctx.tz);
   const series = await dailySeries(ctx.db,ctx.userId,addDays(today,-6),today);
-  const max = Math.max(...series.flatMap(s=>[s.spent,s.saved]),1);
-  const bar = (n:number)=>'▇'.repeat(n>0?Math.max(1,Math.round(n/max*12)):0);
-  await ctx.reply(`Last 7 days · today is incomplete\nSpending / savings deposits\n\n${series.map(s=>`${s.day}\n${bar(s.spent)} ${money(s.spent,ctx.sign)} spent\n${bar(s.saved)} ${minorMoney(Math.round(s.saved*100),ctx.sign)} saved${s.withdrawn?`\nWithdrawn: ${minorMoney(Math.round(s.withdrawn*100),ctx.sign)}`:''}`).join('\n\n')}\n\n/chart 7 for interactive charts. /chartpdf 7 for PDF.`);
+  await ctx.api.sendRichMessage(ctx.chat.id, {blocks:[
+    {type:'heading',size:2,text:'Last 7 days'},
+    reportTable(['Date','Spent','Saved','Withdrawn'],series.map(s=>[s.day,money(s.spent,ctx.sign),minorMoney(Math.round(s.saved*100),ctx.sign),minorMoney(Math.round(s.withdrawn*100),ctx.sign)])),
+    {type:'footer',text:'Today is incomplete. /chart 7 for interactive charts. /chartpdf 7 for PDF.'},
+  ]});
 });
 daily.command('compare',async ctx=> {
   const today=todayIn(ctx.tz), end=addDays(today,-1), start=addDays(today,-7), prev=addDays(today,-14);
@@ -82,8 +86,8 @@ daily.command('chartpdf',async ctx=> {
   const to=todayIn(ctx.tz),from=addDays(to,1-Number(arg));
   await ctx.reply('Building your spending and savings chart…');
   ctx.exec.waitUntil((async()=> {
-    const series=await dailySeries(ctx.db,ctx.userId,from,to);
-    const bytes=await buildDailyChart(series,to);
-    await ctx.api.sendDocument(ctx.chat!.id,new InputFile(bytes,`fintrack-daily-${from}-${to}.pdf`),{caption:'Daily spending and confirmed savings. Today is incomplete; missing days mean no entries recorded.'});
+    const data=await collectReport(ctx.db,ctx.userId,from,to,`${from} to ${to}`,from.slice(0,7)===to.slice(0,7)?to.slice(0,7):null,ctx.env.CURRENCY,to);
+    const bytes=await buildReport(data);
+    await ctx.api.sendDocument(ctx.chat!.id,new InputFile(bytes,`fintrack-daily-${from}-${to}.pdf`),{caption:'Detailed financial report: accounts, income, spending, savings and complete activity. Today is incomplete.'});
   })().catch(async err=>{console.error('daily chart failed',err);await ctx.api.sendMessage(ctx.chat!.id,'Could not build the chart. Try again.');}));
 });

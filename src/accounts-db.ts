@@ -22,6 +22,16 @@ export class AccountsDb {
     if(rows.length!==1) throw new Error('Choose an account first. Use /account to create one, then include @ Account.');
     return rows[0]!.id;
   }
+  /** Check before a Telegram write; SQL triggers remain the atomic final guard. */
+  async assertCanSpend(user:number,id:number,amountMinor:number,day:string):Promise<void> {
+    const account=await this.get(user,id);
+    if(!account || account.archived) throw new Error('Choose an active account owned by you.');
+    if(day<account.opening_on) return;
+    const atDay=(await this.list(user,day)).find(a=>a.id===id)!.balance_minor;
+    const later=await this.db.prepare('SELECT MIN(balance_minor) AS balance FROM account_daily_balances WHERE account_id=? AND day>=?').bind(id,day).first<{balance:number|null}>();
+    const available=Math.min(atDay,later?.balance??atDay);
+    if(amountMinor>available) throw new Error(`Insufficient funds in ${account.name}. Available for this date: ${(Math.max(0,available)/100).toLocaleString('en-US')} AMD. Choose another account or correct the amount.`);
+  }
   async get(user:number,id:number) { return this.db.prepare('SELECT * FROM accounts WHERE user_id=? AND id=?').bind(user,id).first<Account>(); }
   async create(user:number,name:string,openingMinor:number,openingOn:string,eventKey:string) {
     return (await this.db.prepare('INSERT OR IGNORE INTO accounts(user_id,name,opening_minor,opening_on,event_key) VALUES(?,?,?,?,?)').bind(user,name,openingMinor,openingOn,eventKey).run()).meta.changes === 1;

@@ -59,7 +59,12 @@ export class Db {
     const statements=tables.map(table=>this.d1.prepare(`DELETE FROM ${table} WHERE user_id=? AND ${guard}`).bind(userId,userId,token,now));
     statements.push(this.d1.prepare(`DELETE FROM users WHERE id=? AND ${guard}`).bind(userId,userId,token,now));
     statements.push(this.d1.prepare(`DELETE FROM sessions WHERE user_id=? AND ${guard}`).bind(userId,userId,token,now));
-    return ((await this.d1.batch(statements)).at(-1)?.meta.changes??0)>0;
+    const result = await this.d1.batch([
+      this.d1.prepare('INSERT INTO account_balance_batches(user_id) VALUES(?)').bind(userId),
+      ...statements,
+      this.d1.prepare('DELETE FROM account_balance_batches WHERE user_id=?').bind(userId),
+    ]);
+    return (result.at(-2)?.meta.changes??0)>0;
   }
 
   async setTz(userId: number, tz: string): Promise<void> {

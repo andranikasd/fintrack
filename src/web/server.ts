@@ -7,14 +7,14 @@ import { dashboardAction, ActionError } from './actions';
 import { renderDashboard } from './render';
 import { monthOf, monthStart, todayIn } from '../lib/dates';
 
-async function body(request: IncomingMessage): Promise<Record<string,unknown>> {
+async function body(request: IncomingMessage, limit=16384): Promise<Record<string,unknown>> {
   if (!request.headers['content-type']?.startsWith('application/json')) throw new ActionError('JSON is required.',415);
   const chunks: Buffer[]=[];
   let size=0;
   for await (const chunk of request) {
     const bytes=Buffer.isBuffer(chunk)?chunk:Buffer.from(chunk);
     size+=bytes.length;
-    if (size>16384) throw new ActionError('Request too large.',413);
+    if (size>limit) throw new ActionError('Request too large.',413);
     chunks.push(bytes);
   }
   const text=Buffer.concat(chunks).toString('utf8');
@@ -66,8 +66,16 @@ export function createDashboardHandler(env: Env) {
         catch(error) { throw new ActionError(error instanceof Error?error.message:'Could not load dashboard.'); }
         return;
       }
-      if (request.method==='POST'&&path.pathname==='/api/action') {
-        await dashboardAction(db,env.DB,user,tz,await body(request));json(200,{ok:true});return;
+      if (request.method==='GET'&&path.pathname==='/api/history') {const before=Number(path.searchParams.get('before'))||Number.MAX_SAFE_INTEGER;json(200,await db.workspace.history(user,before));return;}
+      if (request.method==='GET'&&/^\/api\/attachment\/\d+$/.test(path.pathname)) {
+        const item=await env.DB.prepare('SELECT name,mime,data FROM entry_attachments WHERE user_id=? AND id=?').bind(user,Number(path.pathname.split('/').at(-1))).first<{name:string;mime:string;data:string|null}>();
+        if(!item?.data){json(404,{error:'Receipt not found.'});return;}
+        response.writeHead(200,{'Content-Type':item.mime,'Content-Disposition':"attachment; filename*=UTF-8''"+encodeURIComponent(item.name)});response.end(Buffer.from(item.data,'base64'));return;
+      }
+      if (request.method==='POST'&&(path.pathname==='/api/action'||path.pathname==='/api/attachment')) {
+        const input=await body(request,path.pathname==='/api/attachment'?1200000:16384);
+        if(path.pathname==='/api/attachment'&&input.action!=='attachment-add')throw new ActionError('Invalid attachment action.');
+        const result=await dashboardAction(db,env.DB,user,tz,input);json(200,{ok:true,result});return;
       }
       json(404,{error:'Not found.'});
     } catch(error) {

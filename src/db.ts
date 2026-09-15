@@ -1,3 +1,4 @@
+import { WorkspaceDb } from './workspace-db';
 import { AccountsDb } from './accounts-db';
 import { IncomeDb } from './income-db';
 import type { Database, Statement } from './database';
@@ -20,13 +21,14 @@ const DEFAULT_CATEGORIES: Array<[string, string]> = [
 ];
 
 export class Db {
+  readonly workspace: WorkspaceDb;
   readonly finance: FinanceDb;
   readonly income: IncomeDb;
   readonly accounts: AccountsDb;
   constructor(
     private readonly d1: Database,
     private readonly defaultTz: string,
-  ) { this.finance = new FinanceDb(d1); this.income = new IncomeDb(d1); this.accounts = new AccountsDb(d1); }
+  ) { this.finance = new FinanceDb(d1); this.income = new IncomeDb(d1); this.accounts = new AccountsDb(d1); this.workspace = new WorkspaceDb(d1); }
 
   async ensureUser(userId: number): Promise<string> {
     const existing = await this.d1

@@ -1,3 +1,5 @@
+import { WorkspaceDb, WorkspaceError } from '../workspace-db';
+import { workspaceAction, workspaceActions } from './workspace-actions';
 import type { Db } from '../db';
 import type { Database } from '../database';
 import { validDate, parseMinor } from '../lib/savings';
@@ -17,12 +19,13 @@ function id(value: unknown): number {
   if (!Number.isSafeInteger(value) || Number(value)<=0) throw new ActionError('Invalid record.');
   return Number(value);
 }
-export async function dashboardAction(db: Db, sql: Database, user: number, tz: string, body: Record<string, unknown>): Promise<void> {
+export async function dashboardAction(db: Db, sql: Database, user: number, tz: string, body: Record<string, unknown>): Promise<unknown> {
   if (typeof body.requestId !== 'string' || !/^[a-f0-9-]{36}$/i.test(body.requestId)) throw new ActionError('Missing request identifier.');
   const event = `dashboard:${user}:${body.requestId}`;
   const today = todayIn(tz);
   const day = body.day === undefined ? today : body.day;
   if (typeof day!=='string' || !validDate(day) || day>today) throw new ActionError('Choose today or a past date.');
+  if(workspaceActions.has(String(body.action))){try{return await workspaceAction(db,new WorkspaceDb(sql),user,today,body);}catch(error){if(error instanceof WorkspaceError)throw new ActionError(error.message,409);throw error;}}
   const account = async(required=false) => {
     if (body.accountId==null) { if(required) throw new ActionError('Choose the account that received this income. Create an account first.'); return null; }
     const a=await db.accounts.get(user,id(body.accountId));

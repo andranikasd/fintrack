@@ -350,3 +350,107 @@ docker compose -f compose.yaml -f compose.dashboard.yaml up -d --build
 
 Migration `0005_accounts.sql` runs automatically. Existing amounts and savings
 history stay intact; existing income/expenses start without an account assignment.
+
+### Exploring the charts
+
+The Explore view supports bars, lines and running totals, grouped by day, week
+or month. Running totals start at the beginning of the selected range and follow
+all active filters; they are not bank balances. Focus or select a line point to
+read every visible series and open its period. Use **Back to previous range** to
+return after drilling into a chart or calendar day.
+
+Filters sit above the charts. Category/source shares, largest purchases, repeat
+spending, weekday averages and income/account coverage all follow that selection.
+Repeated spending groups exact item names ignoring case and surrounding spaces;
+it does not identify subscriptions automatically. Calendar-day and weekday averages
+include days without recorded expenses, so incomplete logging can lower them.
+
+The monthly spending-pace chart compares cumulative recorded expenses with an
+even distribution of your current budget. Its month-end estimate extrapolates
+spending per elapsed calendar day; it does not predict unrecorded future bills.
+Historical months display their actual total. An offline snapshot needs complete
+month-to-date coverage to show this chart.
+
+## Saved views, rules, history and monthly closing
+
+Migration `0006_dashboard_workspace.sql` adds these features automatically when
+rebuilding/restarting with your existing Compose files. SQLite backups include
+history, saved views, logging confirmations, reviews, receipt files and notes.
+No extra service or environment variable is required.
+
+### Saved views and comparisons
+
+Save the current filters, chart style, visible series and grouping with **Save
+current filters**. Choose current month, last N days, or fixed dates. Saved views
+are private to your user and work across devices; saving the same name replaces
+its settings. The Saved views screen can open or delete them.
+
+The monthly view explains spending changes by category, comparing equivalent
+periods. The goal planner compares the chosen daily contribution with 25% less
+and 25% more and lets you enter planned skipped days. These scenarios do not
+record deposits; estimates exclude budget/cap constraints and future price changes.
+
+### Category rules
+
+Open **Category rules**, create/edit a rule, put spelling variations on separate
+lines, and select a category. **Preview affected entries** shows the number,
+combined amount and first 25 examples of matching existing expenses. Save either
+for future matching only or apply to existing matching entries as well.
+Matching trims surrounding whitespace and ignores case; it does not use fuzzy
+matching or rewrite product names. A stale preview is rejected if records or
+rule inputs changed. Removing a rule affects future matching, not existing rows.
+Channel matching continues using the bot's learned aliases and category matching.
+
+### Change history and undo
+
+History starts when this migration is installed; it cannot reconstruct earlier
+edits. It records inserts, edits and deletions for expenses, income, savings,
+accounts, goals, categories, budgets, rules, preferences and channel sync status.
+Channel row replacements appear as removed and added entries. Open an event to
+see its changed fields. The live history pages through older events.
+
+Undo is available for the **latest manual expense/income edit or deletion**,
+including corrections made in Telegram. It restores exact amounts, dates, labels,
+categories and account assignment. It rejects already undone events, newer changes,
+and cross-user records. Undo itself is logged. Channel history is read-only:
+correct the original post so Telegram remains the source of truth. Account, goal,
+rule and settings history is informational; edit those through their normal controls.
+
+### Logging status and monthly closing
+
+Confirm a day as **All entries recorded** or **Confirmed no spending** from Today,
+the calendar or Monthly closing. A day with expenses cannot be marked no-spend.
+Any later expense/income/savings change on that date clears its confirmation.
+A blank calendar day therefore remains distinct from verified zero spending.
+
+For a completed month, Monthly closing checks:
+
+- Missing categories and account assignments.
+- Unconfirmed days and channel sync errors.
+- Each recorded account balance against the actual month-end balance you enter.
+
+Checking a balance does not create income, expenses or balance adjustments.
+Resolve differences by correcting the underlying records/opening balance.
+**Confirm all remaining days** is an explicit confirmation that logging is complete
+for every elapsed day; it does not infer completeness from missing entries.
+A month can be marked reviewed only after it ends and all checks pass. Reviewing
+is not a lock: later record changes flag the month for review again. Reopen it
+manually when needed. The offline file contains a read-only closing checklist for
+the report's ending month; use the live dashboard to review another month's checklist.
+
+### Receipts and notes
+
+Use **Receipt / note** on an expense or income row. Upload a JPEG, PNG or PDF up to
+750 KB, add a note up to 2,000 characters, or save a note alone. Receipt downloads
+require the owner's dashboard session and are sent as downloads. Receipts are
+private database content; they are included in backups. The dashboard embeds only
+receipt metadata/notes, never receipt bytes, in offline HTML snapshots.
+
+Manual receipts stay linked when their record is edited, deleted, or restored.
+Channel receipts use the post, entry type and normalized item name as their link,
+so an amount edit preserves attachments. Identical item names within the same
+post share attachments. Renaming a source item leaves its previous attachments
+in Receipts & notes under the original key; they are not silently reassigned.
+The dashboard lists the latest 500 attachments; older files remain stored.
+Removing an attachment permanently deletes that attachment and note. Restore a
+backup if recovery is needed. No OCR or automatic transaction entry is performed.

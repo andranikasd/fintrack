@@ -1,3 +1,4 @@
+import { cleanup } from './handlers/cleanup';
 import { dashboard } from './handlers/dashboard';
 import { income } from './handlers/income';
 import { categoryReview } from './handlers/category-review';
@@ -51,6 +52,7 @@ export const COMMANDS = [
   { command: 'export', description: 'PDF or CSV report' },
   { command: 'undo', description: 'Remove the last expense' },
   { command: 'tz', description: 'Set your timezone' },
+  { command: 'cleanup', description: 'Erase your data after confirmation' },
   { command: 'help', description: 'How to use the bot' },
 ];
 
@@ -87,7 +89,12 @@ export function createBot(env: Env, exec: BackgroundWork): Bot<AppContext> {
     ctx.sign = env.CURRENCY_SIGN || '֏';
     ctx.userId = from.id;
     ctx.tz = await db.ensureUser(from.id);
-    await next();
+    try { await next(); }
+    catch(error) {
+      console.error('Private update failed',error);
+      await ctx.reply(error instanceof Error && /account|positive|ledger|Telegram|channel message/i.test(error.message)
+        ? error.message : 'Could not complete this request. Check /last, /goal or /syncstatus before retrying.');
+    }
   });
 
   // A command or a menu tap abandons any pending question, so the answer to
@@ -100,6 +107,7 @@ export function createBot(env: Env, exec: BackgroundWork): Bot<AppContext> {
     await next();
   });
 
+  bot.use(cleanup);
   bot.use(channelCommands);
   bot.use(goals);
   bot.use(dashboard);

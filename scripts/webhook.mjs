@@ -54,6 +54,7 @@ const COMMANDS = [
   ['summary', 'Set daily summary time'],
   ['linkchannel', 'Link an expense channel'],
   ['channels', 'List linked channels'],
+  ['cleanup', 'Erase your data after confirmation'],
   ['syncstatus', 'Check channel parsing errors'],
   ['alias', 'Teach an item category'],
 

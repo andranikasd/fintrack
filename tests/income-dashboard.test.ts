@@ -91,7 +91,7 @@ describe('dashboard data and actions',()=>{
   });
   it('edits manual records with conflict detection and prevents cross-account changes',async()=>{
     const {db,d1,day}=await fixture();await db.income.add(1,'Bonus',10000,day,'bonus');const row=(await db.income.list(1,day,day))[0]!;
-    const edit={action:'edit',accountId:1,kind:'income',id:row.id,label:'Bonus corrected',amount:'200.77',day,expected:{label:'Bonus',amountMinor:10000,day},requestId:requestId()};
+    const edit={action:'edit',accountId:1,kind:'income',id:row.id,label:'Bonus corrected',amount:'200.77',day,expected:{accountId:1,label:'Bonus',amountMinor:10000,day},requestId:requestId()};
     await dashboardAction(db,d1,1,'Asia/Yerevan',edit);expect(await db.income.total(1,day,day)).toBe(20077);
     await expect(dashboardAction(db,d1,1,'Asia/Yerevan',edit)).rejects.toThrow('changed');
     await expect(dashboardAction(db,d1,2,'Asia/Yerevan',edit)).rejects.toThrow();

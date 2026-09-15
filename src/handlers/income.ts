@@ -14,7 +14,7 @@ income.command('account', async ctx=>{
     await ctx.reply('Account created. Record income with /income Salary @ '+match[1]+' 450000. Edit account details in /dashboard.');
   }catch(error){await ctx.reply(error instanceof Error?error.message:'Could not create account.');}
 });
-income.command('accounts',async ctx=>{const rows=await ctx.db.accounts.list(ctx.userId,todayIn(ctx.tz));await ctx.reply(rows.length?rows.map(a=>a.name+(a.archived?' (archived)':'')+': '+minorMoney(a.balance_minor,ctx.sign)+(a.passive_income?' · earns passive income':'')).join('\n')+'\n\nRecorded balances exclude unassigned entries. /dashboard to edit.':'No accounts yet. /account Card 100000');});
+income.command('accounts',async ctx=>{const rows=await ctx.db.accounts.list(ctx.userId,todayIn(ctx.tz));await ctx.reply(rows.length?rows.map(a=>a.name+(a.archived?' (archived)':'')+': '+minorMoney(a.balance_minor,ctx.sign)+(a.passive_income?' · earns passive income':'')).join('\n')+'\n\nBalances include income, spending and savings transfers from the opening date. Legacy unassigned accounts need reconciliation. /dashboard to edit.':'No accounts yet. /account Card 100000');});
 income.command('income', async ctx => {
   const arg = ctx.match.trim();
   const today = todayIn(ctx.tz);

@@ -1,3 +1,4 @@
+import { todayIn } from '../lib/dates';
 import { accountEntry } from '../lib/account-entry';
 import { Composer } from 'grammy';
 import type { AppContext } from '../context';
@@ -18,8 +19,8 @@ channelCommands.command('linkchannel', async ctx => {
     const chat = await ctx.api.getChat(arg.startsWith('@') ? arg : Number(arg));
     if (chat.type !== 'channel') { await ctx.reply('Please choose a channel.'); return; }
     const [owner, bot] = await Promise.all([ctx.api.getChatMember(chat.id,ctx.userId),ctx.api.getChatMember(chat.id,ctx.me.id)]);
-    if (!['creator','administrator'].includes(owner.status) || bot.status !== 'administrator') {
-      await ctx.reply('Both you and the bot must be administrators of this channel.'); return;
+    if (!['creator','administrator'].includes(owner.status) || bot.status !== 'administrator' || !bot.can_post_messages || !bot.can_edit_messages) {
+      await ctx.reply('Both you and the bot must be administrators. Give the bot permission to post and edit messages.'); return;
     }
     const ok = await ctx.db.finance.link(chat.id,ctx.userId,chat.title);
     await ctx.reply(ok ? `Linked ${chat.title}. New posts and edits will sync to your account. Use /today to check them. Older posts must be edited to trigger syncing; they are not imported automatically.` : 'This channel is already linked to another account.');
@@ -40,13 +41,13 @@ channelCommands.on('message:forward_origin', async (ctx,next) => {
   await ctx.reply(`Channel ID: ${origin.chat.id}\nLink it with /linkchannel ${origin.chat.id}\nForwarding does not import an expense.`);
 });
 
-export async function handleChannelPost(ctx: AppContext, db: Db, allowlist: Set<number>, sign: string): Promise<boolean> {
-  const post = ctx.update.channel_post ?? ctx.update.edited_channel_post;
+export async function handleChannelPost(ctx: AppContext, db: Db, allowlist: Set<number>, sign: string, suppliedPost?: import('grammy/types').Message): Promise<boolean> {
+  const post = suppliedPost ?? ctx.update.channel_post ?? ctx.update.edited_channel_post;
   if (!post) return false;
   const linked = await db.finance.channel(post.chat.id);
   if (!linked || (allowlist.size > 0 && !allowlist.has(linked.user_id))) return true;
   // Service messages and reports are never finance inputs.
-  if (post.from?.is_bot || post.via_bot) return true;
+  if ((post.from?.is_bot && post.from.id!==ctx.me.id) || post.via_bot) return true;
   const previous = await db.finance.post(post.chat.id,post.message_id);
   if (post.text?.startsWith('/') && !previous) return true;
   if (!post.text && !post.caption && !post.rich_message && !previous) return true;
@@ -54,36 +55,45 @@ export async function handleChannelPost(ctx: AppContext, db: Db, allowlist: Set<
   let parsed;
   let rows: SyncedRow[] = [];
   let error: string | null = null;
+  const setups: Array<{name:string;amount:number}>=[];
   try {
     parsed = parseDailyPost(post,tz);
+    if(parsed.day>todayIn(tz)) throw new Error('Use today or a past date for recorded activity.');
     for (const row of parsed.rows.filter(r=>r.kind==='account')) {
       const account = accountEntry(row.label);
       if (!account.label || account.label.length>60) throw new Error('Account names must be 1–60 characters.');
       if (account.accountName) throw new Error('Account rows do not need “@ Account”: use account:Card | 100000.');
-      await db.accounts.create(linked.user_id,account.label,row.amountMinor,parsed.day,`channel-account:${post.chat.id}:${post.message_id}:${account.label.toLowerCase()}`);
+      const existing=await db.accounts.named(linked.user_id,account.label,true);
+      if(existing && (existing.opening_minor!==row.amountMinor || existing.opening_on!==parsed.day)) throw new Error('Account already exists with a different opening balance or date. Edit it in /dashboard.');
+      if(setups.some(a=>a.name.toLowerCase()===account.label.toLowerCase())) throw new Error('Use only one setup row per account.');
+      if(!existing) setups.push({name:account.label,amount:row.amountMinor});
     }
     const [categories,aliases,goals,accounts,accountNames] = await Promise.all([db.categories(linked.user_id),db.finance.aliases(linked.user_id),db.finance.goals(linked.user_id),db.accounts.list(linked.user_id,parsed.day),db.accounts.aliases(linked.user_id)]);
     rows = parsed.rows.map((row): SyncedRow | null => {
       if (row.kind==='account') return null;
-      const entry=row.kind==='income'||row.kind==='expense'?accountEntry(row.label):{label:row.label,accountName:null,passive:false};
+      const entry=accountEntry(row.label);
       const account=entry.accountName?accounts.find(a=>a.name.toLowerCase()===entry.accountName!.toLowerCase()||accountNames.some(n=>n.account_id===a.id&&n.name.toLowerCase()===entry.accountName!.toLowerCase())):null;
-      if (entry.accountName&&!account) throw new Error('Unknown account: '+entry.accountName+'. Create it with /account or in the dashboard.');
-      if (row.kind==='expense' && !entry.accountName && accounts.some(a=>!a.archived)) throw new Error('This spending row needs an account. Add “ @ Account” to the item, then edit the channel post.');
-      if(row.kind==='income'&&!account) throw new Error('Income needs a receiving account. Use income:Salary @ Card and create Card in /dashboard or /account.');
-      if (row.kind === 'income') return {categoryId:null,label:entry.label,amount:row.amountMinor,income:true,accountId:account?.id,passive:entry.passive};
-      if (row.kind === 'expense') row.label=entry.label;
+      const setup=entry.accountName?setups.find(a=>a.name.toLowerCase()===entry.accountName!.toLowerCase()):null;
+      if(account?.archived) throw new Error('Choose an active account.');
+      if (entry.accountName&&!account&&!setup) throw new Error('Unknown account: '+entry.accountName+'. Create it with /account or in the dashboard.');
+      if (!entry.accountName && accounts.filter(a=>!a.archived).length+setups.length!==1) throw new Error('This row needs an account. Add “ @ Account” to the item, then edit the channel post.');
+      if(row.kind==='income'&&!account&&!setup&&accounts.filter(a=>!a.archived).length+setups.length!==1) throw new Error('Income needs a receiving account. Use income:Salary @ Card and create Card in /dashboard or /account.');
+      const accountId=account?.id ?? (!entry.accountName&&accounts.filter(a=>!a.archived).length===1?accounts.find(a=>!a.archived)!.id:undefined);
+      const accountName=setup?.name ?? (!entry.accountName&&setups.length===1?setups[0]!.name:undefined);
+      if (row.kind === 'income') return {categoryId:null,label:entry.label,amount:row.amountMinor,income:true,accountId,accountName,passive:entry.passive};
+      row.label=entry.label;
       if (row.kind !== 'expense') {
         const goal = goals.find(g=>g.name.toLowerCase()===row.label.toLowerCase());
         if (!goal) throw new Error(`Unknown savings goal: ${row.label}. Create it with /goal first.`);
-        return {categoryId:null,label:row.label,amount:row.amountMinor*(row.kind==='withdraw'?-1:1),goalId:goal.id};
+        return {categoryId:null,label:row.label,amount:row.amountMinor*(row.kind==='withdraw'?-1:1),goalId:goal.id,accountId,accountName};
       }
       const alias = aliases.find(a=>a.label.toLowerCase()===row.label.toLowerCase());
       const categoryId = alias && categories.some(c=>c.id===alias.category_id) ? alias.category_id : matchCategory(row.label,categories).category?.id ?? null;
-      return {categoryId,label:row.label,amount:row.amountMinor/100,accountId:account?.id ?? null};
+      return {categoryId,label:row.label,amount:row.amountMinor/100,accountId,accountName};
     }).filter((row): row is SyncedRow => row !== null);
   } catch (err) { error = err instanceof Error ? err.message : 'Could not read this post.'; }
   let changed: boolean;
-  try { changed = await db.finance.syncPost(linked.user_id,post.chat.id,post.message_id,post.edit_date ?? post.date,ctx.update.update_id,error?null:parsed!.day,rows,error); }
+  try { changed = await db.finance.syncPost(linked.user_id,post.chat.id,post.message_id,post.edit_date ?? post.date,ctx.update.update_id,error?null:parsed!.day,rows,error,setups,Boolean(suppliedPost),JSON.stringify({date:post.date,text:post.text,caption:post.caption,entities:post.entities,caption_entities:post.caption_entities,rich_message:post.rich_message})); }
   catch (err) {
     if (!(err instanceof Error) || !/CHECK constraint failed/.test(err.message)) throw err;
     error = 'This edit would make a savings balance negative. Correct the savings rows first.';

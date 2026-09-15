@@ -1,3 +1,4 @@
+import { AccountsDb } from './accounts-db';
 import type { Database } from './database';
 
 export interface Income {
@@ -16,6 +17,7 @@ export class IncomeDb {
   constructor(private readonly db: Database) {}
 
   async add(user: number, source: string, amount: number, day: string, event: string, account: number | null = null, passive = false): Promise<boolean> {
+    account = await new AccountsDb(this.db).resolve(user,account);
     const result = await this.db.prepare(`INSERT OR IGNORE INTO income
       (user_id,source,amount_minor,received_on,event_key,account_id,passive) VALUES(?,?,?,?,?,?,?)`)
       .bind(user,source,amount,day,event,account,passive?1:0).run();

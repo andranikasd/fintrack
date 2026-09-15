@@ -25,7 +25,7 @@ export async function dashboardData(db: Db, user: number, tz: string, from: stri
   const records: DashboardRecord[] = [
     ...expenses.map(r=>({id:r.id,kind:'expense' as const,entryKey:r.source_chat==null?`expense:${r.id}`:`channel:${r.source_chat}:${r.source_message}:expense:${r.note.trim().toLowerCase()}`,accountId:r.account_id??null,day:r.spent_on,label:r.note||r.category_name||'Expense',originalLabel:r.note,amountMinor:r.amount*100,categoryId:r.category_id,category:r.category_name||'Uncategorized',channel:r.source_chat!=null})),
     ...incomes.map(r=>({id:r.id,kind:'income' as const,entryKey:r.source_chat==null?`income:${r.id}`:`channel:${r.source_chat}:${r.source_message}:income:${r.source.trim().toLowerCase()}`,accountId:r.account_id,passive:Boolean(r.passive),day:r.received_on,label:r.source,amountMinor:r.amount_minor,categoryId:null,category:r.source,channel:r.source_chat!==null})),
-    ...savings.map(r=>({id:r.id,kind:r.amount_minor>0?'saving' as const:'withdrawal' as const,day:r.saved_on,label:r.goal_name,amountMinor:Math.abs(r.amount_minor),categoryId:null,category:r.goal_name,channel:r.source_chat!==null})),
+    ...savings.map(r=>({id:r.id,accountId:r.account_id,kind:r.amount_minor>0?'saving' as const:'withdrawal' as const,day:r.saved_on,label:r.goal_name,amountMinor:Math.abs(r.amount_minor),categoryId:null,category:r.goal_name,channel:r.source_chat!==null})),
   ].sort((a,b)=>b.day.localeCompare(a.day)||b.id-a.id);
   return {from,to,today,insights,accounts,workspace,records,categories,status,warnings: warnings.map(w=>`Channel post #${w.message_id}: ${w.error}`)};
 }

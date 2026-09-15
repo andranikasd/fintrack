@@ -17,7 +17,7 @@ describe('accounts and dashboard views',()=>{
     await act({action:'add-income',accountId:account.id,label:'Interest',amount:'200.15',passive:true});
     await act({action:'add-expense',accountId:account.id,label:'metro',categoryId:null,amount:'150'});
     await db.income.add(1,'older',50000,addDays(day,-1),'old',account.id);
-    await db.income.add(1,'unassigned',90000,day,'unknown');
+    await expect(db.income.add(2,'unassigned',90000,day,'unknown')).rejects.toThrow('Choose an account');
     const result=(await db.accounts.list(1,day))[0]!;expect(result.balance_minor).toBe(105092);expect(result.passive_income).toBe(1);
     expect((await db.accounts.list(1,addDays(day,5)))[0]!.balance_minor).toBe(105092);
     expect(await db.accounts.list(2,day)).toEqual([]);
@@ -35,9 +35,9 @@ describe('accounts and dashboard views',()=>{
   it('deduplicates account creation and recalculates balances after manual edits and deletion',async()=>{
     const {db,act,day,account}=await fixture();const input={action:'account-create',label:'Cash',opening:'0',openingOn:day,requestId:crypto.randomUUID()};await act(input);await act(input);expect(await db.accounts.list(1,day)).toHaveLength(2);
     await act({action:'add-income',accountId:account.id,label:'Salary',amount:'200'});const row=(await db.income.list(1,day,day))[0]!;
-    await act({action:'edit',kind:'income',id:row.id,label:'Salary',amount:'250.77',accountId:account.id,expected:{day,label:'Salary',amountMinor:20000}});
+    await act({action:'edit',kind:'income',id:row.id,label:'Salary',amount:'250.77',accountId:account.id,expected:{accountId:account.id,day,label:'Salary',amountMinor:20000}});
     expect((await db.accounts.list(1,day)).find(a=>a.id===account.id)!.balance_minor).toBe(125154);
-    await act({action:'delete',kind:'income',id:row.id,expected:{day,label:'Salary',amountMinor:25077}});
+    await act({action:'delete',kind:'income',id:row.id,expected:{accountId:account.id,day,label:'Salary',amountMinor:25077}});
     expect((await db.accounts.list(1,day)).find(a=>a.id===account.id)!.balance_minor).toBe(100077);
   });
   it('keeps account-linked channel edits atomic, including after an account rename',async()=>{

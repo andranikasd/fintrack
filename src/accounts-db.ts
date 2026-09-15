@@ -8,8 +8,19 @@ export class AccountsDb {
   async list(user:number,today:string):Promise<Account[]> {
     return (await this.db.prepare(`SELECT a.*,
       a.opening_minor + COALESCE((SELECT SUM(i.amount_minor) FROM income i WHERE i.user_id=a.user_id AND i.account_id=a.id AND i.received_on BETWEEN a.opening_on AND ?),0)
-      - COALESCE((SELECT SUM(t.amount)*100 FROM transactions t WHERE t.user_id=a.user_id AND t.account_id=a.id AND t.spent_on BETWEEN a.opening_on AND ?),0) AS balance_minor
-      FROM accounts a WHERE a.user_id=? ORDER BY a.archived,lower(a.name)`).bind(today,today,user).all<Account>()).results;
+      - COALESCE((SELECT SUM(t.amount)*100 FROM transactions t WHERE t.user_id=a.user_id AND t.account_id=a.id AND t.spent_on BETWEEN a.opening_on AND ?),0) - COALESCE((SELECT SUM(s.amount_minor) FROM savings s WHERE s.user_id=a.user_id AND s.account_id=a.id AND s.saved_on BETWEEN a.opening_on AND ?),0) AS balance_minor
+      FROM accounts a WHERE a.user_id=? ORDER BY a.archived,lower(a.name)`).bind(today,today,today,user).all<Account>()).results;
+  }
+  /** An omitted account is unambiguous only when exactly one active account exists. */
+  async resolve(user:number,account:number|null=null):Promise<number> {
+    if (account !== null) {
+      const row=await this.get(user,account);
+      if (!row || row.archived) throw new Error('Choose an active account owned by you.');
+      return row.id;
+    }
+    const rows=(await this.db.prepare('SELECT id FROM accounts WHERE user_id=? AND archived=0 LIMIT 2').bind(user).all<{id:number}>()).results;
+    if(rows.length!==1) throw new Error('Choose an account first. Use /account to create one, then include @ Account.');
+    return rows[0]!.id;
   }
   async get(user:number,id:number) { return this.db.prepare('SELECT * FROM accounts WHERE user_id=? AND id=?').bind(user,id).first<Account>(); }
   async create(user:number,name:string,openingMinor:number,openingOn:string,eventKey:string) {

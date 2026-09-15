@@ -43,7 +43,7 @@ describe('exact savings and plans',()=> {
 
 describe('SQLite sync and savings invariants',()=> {
   it('replaces only that post, handles duplicates/stale edits, date changes and row removal',async()=> {
-    const {db}=testDb();await db.ensureUser(1);
+    const {db}=testDb();await db.ensureUser(1); await db.accounts.create(1,'Test account',0,'2000-01-01','test-account:1');
     const row={categoryId:null,label:'metro',amount:150};
     await db.addTransaction(1,null,10,'private','2026-09-15');
     await db.finance.syncPost(1,-1001,1,date,1,'2026-09-15',[row],null);
@@ -57,7 +57,7 @@ describe('SQLite sync and savings invariants',()=> {
     expect(await db.totalBetween(1,'2026-09-14','2026-09-14')).toBe(0);
   });
   it('preserves valid records on invalid edits and refuses an older valid update',async()=> {
-    const {db}=testDb();await db.ensureUser(1);
+    const {db}=testDb();await db.ensureUser(1); await db.accounts.create(1,'Test account',0,'2000-01-01','test-account:1');
     await db.finance.syncPost(1,-1001,1,date,1,'2026-09-15',[{categoryId:null,label:'metro',amount:150}],null);
     await db.finance.syncPost(1,-1001,1,date+2,3,null,[],'invalid amount');
     expect(await db.finance.syncPost(1,-1001,1,date+1,2,'2026-09-15',[],null)).toBe(false);
@@ -65,7 +65,7 @@ describe('SQLite sync and savings invariants',()=> {
     expect(await db.finance.errors(1)).toHaveLength(1);
   });
   it('rolls back an edit that would leave savings negative',async()=> {
-    const {db}=testDb();await db.ensureUser(1);await db.finance.putGoal(1,'laptop',96038177,null,300000,0,null);
+    const {db}=testDb();await db.ensureUser(1); await db.accounts.create(1,'Test account',0,'2000-01-01','test-account:1');await db.finance.putGoal(1,'laptop',96038177,null,300000,0,null);
     const g=(await db.finance.goals(1))[0]!;
     await db.finance.syncPost(1,-1001,1,date,1,'2026-09-15',[{categoryId:null,label:'laptop',amount:500000,goalId:g.id}],null);
     await db.finance.contribute(1,g.id,-400000,'2026-09-15','withdraw1');
@@ -73,7 +73,7 @@ describe('SQLite sync and savings invariants',()=> {
     expect((await db.finance.goals(1))[0]?.saved_minor).toBe(100000);
   });
   it('opening balance is not daily savings; confirmed transfers are idempotent and owner-scoped',async()=> {
-    const {db}=testDb();await db.ensureUser(1);await db.finance.putGoal(1,'laptop',96038177,null,300000,20000000,null);
+    const {db}=testDb();await db.ensureUser(1); await db.accounts.create(1,'Test account',0,'2000-01-01','test-account:1');await db.finance.putGoal(1,'laptop',96038177,null,300000,20000000,null);
     const g=(await db.finance.goals(1))[0]!;
     expect(await db.finance.savingsTotal(1,'2026-09-01','2026-09-30')).toBe(0);
     expect(await db.finance.contribute(2,g.id,550077,'2026-09-15','foreign')).toBe(false);
@@ -84,7 +84,7 @@ describe('SQLite sync and savings invariants',()=> {
     expect((await db.finance.goals(1))[0]?.opening_minor).toBe(20000000);
   });
   it('allocates shared budget across goals without overspending and subtracts confirmed transfers',async()=> {
-    const {db}=testDb();await db.ensureUser(1);await db.setBudget(1,0,16000);await db.finance.setFunding(1,'shared',0);
+    const {db}=testDb();await db.ensureUser(1); await db.accounts.create(1,'Test account',0,'2000-01-01','test-account:1');await db.setBudget(1,0,16000);await db.finance.setFunding(1,'shared',0);
     await db.finance.putGoal(1,'laptop',96038177,null,300000,0,null);await db.finance.putGoal(1,'trip',10000000,null,100000,0,null);
     const status=await financialStatus(db,1,'2026-09-15');expect(status.plans.reduce((s,p)=>s+p.suggested,0)).toBe(100000);
     expect(status.plans[0]?.suggested).toBe(75000);
@@ -93,7 +93,7 @@ describe('SQLite sync and savings invariants',()=> {
     expect((await financialStatus(db,1,'2026-09-15')).plans[0]?.suggested).toBe(0);
   });
   it('reminder confirmations are atomic and stale reminders cannot duplicate table savings',async()=> {
-    const {db}=testDb();await db.ensureUser(1);await db.finance.putGoal(1,'laptop',96038177,null,300000,0,null);
+    const {db}=testDb();await db.ensureUser(1); await db.accounts.create(1,'Test account',0,'2000-01-01','test-account:1');await db.finance.putGoal(1,'laptop',96038177,null,300000,0,null);
     const g=(await db.finance.goals(1))[0]!,r=await db.finance.reminder(1,g.id,'2026-09-15',300000);
     expect(await db.finance.resolveReminder(2,r.id,300000)).toBe(false);
     expect(await db.finance.resolveReminder(1,r.id,300000)).toBe(true);
@@ -106,7 +106,7 @@ describe('SQLite sync and savings invariants',()=> {
 });
 
 it('routes channel updates without a sender, prevents unlinked channels, and survives malformed edits',async()=> {
-  const {db,d1}=testDb();await db.ensureUser(1);await db.finance.link(-1001,1,'My finances');
+  const {db,d1}=testDb();await db.ensureUser(1); await db.accounts.create(1,'Test account',0,'2000-01-01','test-account:1');await db.finance.link(-1001,1,'My finances');
   const info={id:99,is_bot:true as const,first_name:'Fintrack',username:'test_bot',can_join_groups:true,can_read_all_group_messages:false,supports_inline_queries:false};
   const bot=createBot({DB:d1,WEBHOOK_SECRET:'test',CURRENCY:'AMD',BOT_TOKEN:'test',BOT_INFO:JSON.stringify(info),ALLOWED_USER_IDS:'1',DEFAULT_TZ:'Asia/Yerevan',CURRENCY_SIGN:'֏'} as Env,{waitUntil:()=>{}} as unknown as ExecutionContext);
   const sent:unknown[]=[];

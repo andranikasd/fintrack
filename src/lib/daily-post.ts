@@ -85,7 +85,7 @@ export function parseDailyPost(message: { text?: string; caption?: string; rich_
       : /^(.*?)\s+([\d,.]+[km]?)\s*(?:֏|AMD)?$/i.exec(line);
     if (!match) throw new Error(`Cannot read row: ${line.slice(0,80)}`);
     let label = match[1]!.trim();
-    const amount = parseMinor(match[2]!.replace(/\s*(֏|AMD)$/i, '').trim());
+    const amount = parseMinor(match[2]!.replace(/\s*(֏|AMD)$/i, '').trim(), /^account\s*:/i.test(label));
     if (!label || label.length > 120 || amount === null) throw new Error(`Invalid item or amount: ${line.slice(0,80)}`);
     const savings = /^(save|withdraw|income|account)\s*:\s*(.+)$/i.exec(label);
     const kind = savings ? savings[1]!.toLowerCase() as 'save' | 'withdraw' | 'income' | 'account' : 'expense';

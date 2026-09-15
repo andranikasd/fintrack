@@ -15,6 +15,7 @@ Just type it:
 <code>03.09 45000 rent</code>
 
 Amount first or last, both work. <code>k</code> = thousand, <code>m</code> = million.
+Create an account first with /account Card 100000. Every expense and savings transfer needs an account. Add @ Card or use the account picker.
 No category in the text? The bot asks with one tap.
 
 <b>Channel, daily reports and savings</b>
@@ -29,8 +30,8 @@ No category in the text? The bot asks with one tap.
 /accounts — recorded account balances
 /income Salary @ Card 450000 — record received income
 /goal — savings goals; /goalhelp for setup examples
-/save laptop 5500 — confirm money moved to savings
-/withdraw laptop 2000 — record money taken back out
+/save laptop 5500 @ Card — confirm money moved to savings
+/withdraw laptop 2000 @ Card — record money taken back out
 /funding shared 20000 — shared budget with a protected reserve
 /remind 20:00 /summary 21:00 — optional daily notifications
 /uncategorized — assign unknown items to existing or new categories
@@ -38,7 +39,7 @@ No category in the text? The bot asks with one tap.
 /syncstatus — posts needing correction
 /forgetpost CHANNEL_ID MESSAGE_ID — remove a deleted post's records
 
-Edit your daily channel table to correct amounts or remove rows. Savings rows use save:laptop or withdraw:laptop as the item. Income rows use income:Salary @ Card. Add [passive] after the account name for passive income. Totals are calculated from expense rows, excluding savings transfers.
+Edit your daily channel table to correct amounts or remove rows. Savings rows use save:laptop @ Card or withdraw:laptop @ Card as the item. Income rows use income:Salary @ Card. Add [passive] after the account name for passive income. Totals are calculated from expense rows, excluding savings transfers.
 Create an account from a channel table with <code>account:Card | 100000</code>; it is setup data and is not counted as spending.
 
 <b>Commands</b>
@@ -50,6 +51,7 @@ Create an account from a channel table with <code>account:Card | 100000</code>; 
 /export — PDF report with charts, or CSV
 /undo — remove the last expense
 /tz — set your timezone (default Asia/Yerevan)
+/cleanup — permanently erase your data after confirmation
 /help — this text
 
 <b>Alerts</b>

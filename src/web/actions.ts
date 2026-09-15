@@ -26,8 +26,8 @@ export async function dashboardAction(db: Db, sql: Database, user: number, tz: s
   const day = body.day === undefined ? today : body.day;
   if (typeof day!=='string' || !validDate(day) || day>today) throw new ActionError('Choose today or a past date.');
   if(workspaceActions.has(String(body.action))){try{return await workspaceAction(db,new WorkspaceDb(sql),user,today,body);}catch(error){if(error instanceof WorkspaceError)throw new ActionError(error.message,409);throw error;}}
-  const account = async(required=false) => {
-    if (body.accountId==null) { if(required) throw new ActionError('Choose the account that received this income. Create an account first.'); return null; }
+  const account = async(required=true) => {
+    if (body.accountId==null) { if(required) throw new ActionError('Choose the account for this entry. Create an account first.'); return null; }
     const a=await db.accounts.get(user,id(body.accountId));
     if (!a||a.archived) throw new ActionError('Choose an active account.');
     return a.id;
@@ -109,7 +109,7 @@ export async function dashboardAction(db: Db, sql: Database, user: number, tz: s
     case 'save': {
       const goal = (await db.finance.goals(user)).find(g=>g.id===id(body.id));
       if (!goal) throw new ActionError('Goal not found.',404);
-      await db.finance.contribute(user,goal.id,amount(body.amount),day,event); return;
+      await db.finance.contribute(user,goal.id,amount(body.amount),day,event,await account()); return;
     }
     case 'edit':
     case 'delete': {
@@ -121,10 +121,10 @@ export async function dashboardAction(db: Db, sql: Database, user: number, tz: s
       if (row.source_chat!==null) throw new ActionError('Edit the source channel table to change this amount or date. You can change its category here.');
       const amountColumn=body.kind==='expense'?'amount':'amount_minor', dateColumn=body.kind==='expense'?'spent_on':'received_on', nameColumn=body.kind==='expense'?'note':'source';
       const expected=body.expected as Record<string,unknown>|undefined;
-      if (!expected || expected.amountMinor!==Number(row[amountColumn])*(body.kind==='expense'?100:1) || expected.day!==row[dateColumn] || expected.label!==row[nameColumn]) throw new ActionError('This record changed. Refresh and try again.',409);
-      const guard=`user_id=? AND id=? AND source_chat IS NULL AND ${amountColumn}=? AND ${dateColumn}=? AND ${nameColumn}=?`;
-      const params=[user,recordId,row[amountColumn],row[dateColumn],row[nameColumn]];
-      const accountId=body.action==='edit'?await account(body.kind==='income'):null;
+      if (!expected || expected.amountMinor!==Number(row[amountColumn])*(body.kind==='expense'?100:1) || expected.day!==row[dateColumn] || expected.label!==row[nameColumn] || expected.accountId!==row.account_id || (body.kind==='income'&&Boolean(expected.passive)!==Boolean(row.passive))) throw new ActionError('This record changed. Refresh and try again.',409);
+      const guard=`user_id=? AND id=? AND source_chat IS NULL AND ${amountColumn}=? AND ${dateColumn}=? AND ${nameColumn}=? AND account_id IS ?${body.kind==='income'?' AND passive=?':''}`;
+      const params=[user,recordId,row[amountColumn],row[dateColumn],row[nameColumn],row.account_id,...(body.kind==='income'?[row.passive]:[])];
+      const accountId=body.action==='edit'?await account():null;
       const result=body.action==='delete'
         ? await sql.prepare(`DELETE FROM ${table} WHERE ${guard}`).bind(...params).run()
         : await sql.prepare(`UPDATE ${table} SET ${amountColumn}=?,${dateColumn}=?,${nameColumn}=?,account_id=?${body.kind==='income'?',passive=?':''} WHERE ${guard}`)

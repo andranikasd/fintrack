@@ -50,15 +50,15 @@ try {
       const post=await fetch(origin+'/api/action',{method:'POST',headers:{Origin:origin,Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify({action:'budget',amount:'150000',requestId:crypto.randomUUID()})});
       if(post.status!==200)throw new Error('Dashboard update failed');
       const account=data.accounts.find(a=>a.name==='Card');
-      if(!account||account.balance_minor!==45000000)throw new Error('Account income balance incorrect');
+      if(!account||account.balance_minor!==44375000)throw new Error('Account income balance incorrect');
       const passive=await fetch(origin+'/api/action',{method:'POST',headers:{Origin:origin,Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify({action:'add-income',label:'Interest',accountId:account.id,passive:true,amount:'100.77',requestId:crypto.randomUUID()})});
       if(passive.status!==200)throw new Error('Passive income write failed');
       const refreshed=await (await fetch(origin+'/api/dashboard',{headers:{Cookie:cookie}})).json();
-      if(refreshed.accounts.find(a=>a.id===account.id).balance_minor!==45010077||!refreshed.records.some(r=>r.passive&&r.accountId===account.id))throw new Error('Passive income balance incorrect');
+      if(refreshed.accounts.find(a=>a.id===account.id).balance_minor!==44385077||!refreshed.records.some(r=>r.passive&&r.accountId===account.id))throw new Error('Passive income balance incorrect');
       if(!refreshed.insights.review||!refreshed.insights.trendPeriods.length)throw new Error('Dashboard views missing');
       const action=async body=>{const r=await fetch(origin+'/api/action',{method:'POST',headers:{Origin:origin,Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify({...body,requestId:crypto.randomUUID()})});if(r.status!==200)throw new Error(await r.text());return r.json()};
       const interest=refreshed.records.find(r=>r.passive);
-      await action({action:'edit',kind:'income',id:interest.id,accountId:account.id,label:'Interest corrected',amount:'200.77',day:interest.day,expected:{label:interest.label,amountMinor:interest.amountMinor,day:interest.day}});
+      await action({action:'edit',kind:'income',id:interest.id,accountId:account.id,label:'Interest corrected',amount:'200.77',day:interest.day,expected:{accountId:interest.accountId,passive:interest.passive,label:interest.label,amountMinor:interest.amountMinor,day:interest.day}});
       const history=await (await fetch(origin+'/api/history',{headers:{Cookie:cookie}})).json();
       const edit=history.rows.find(r=>r.entity==='income'&&r.operation==='update');if(!edit)throw new Error('Edit history missing');
       await action({action:'history-undo',id:edit.id});
@@ -66,7 +66,7 @@ try {
       const receipt=await fetch(origin+'/api/attachment',{method:'POST',headers:{Origin:origin,Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify({action:'attachment-add',kind:'income',id:interest.id,name:'receipt.pdf',mime:'application/pdf',note:'Smoke receipt',data:Buffer.from(file).toString('base64'),requestId:crypto.randomUUID()})});
       if(receipt.status!==200)throw new Error('Receipt upload failed');
       const final=await (await fetch(origin+'/api/dashboard',{headers:{Cookie:cookie}})).json();
-      if(final.accounts.find(a=>a.id===account.id).balance_minor!==45010077)throw new Error('Undo did not restore account balance');
+      if(final.accounts.find(a=>a.id===account.id).balance_minor!==44385077)throw new Error('Undo did not restore account balance');
       const download=await fetch(origin+'/api/attachment/'+final.workspace.attachments[0].id,{headers:{Cookie:cookie}});
       if(await download.text()!==file)throw new Error('Receipt download failed');
       if(!final.workspace.closing||!final.workspace.history.rows.length)throw new Error('Workspace missing');
@@ -80,9 +80,9 @@ try {
   compose('restart', 'bot');
   await healthy();
   assert.equal(sql('SELECT SUM(amount) AS n FROM transactions')[0].n, 750);
-  assert.equal(sql('SELECT COUNT(*) AS n FROM schema_migrations')[0].n, 6);
+  assert.equal(sql('SELECT COUNT(*) AS n FROM schema_migrations')[0].n, 7);
   const snapshot = execFileSync('docker', [...args, 'exec', '-T', 'bot', 'cat', '/backups/smoke.sqlite'], { env });
-  sql("INSERT INTO transactions(user_id,amount,note,spent_on) VALUES(123456789,100,'after backup','2026-09-15') RETURNING id");
+  sql("INSERT INTO transactions(user_id,amount,note,spent_on,account_id) VALUES(123456789,100,'after backup','2026-09-15',1) RETURNING id");
   compose('stop', 'bot');
   execFileSync('docker', [...args, 'run', '--rm', '-T', '--no-deps', 'bot', 'sh', '-ec', `
     cat > /data/restore.sqlite

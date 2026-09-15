@@ -39,7 +39,7 @@ See [VPS setup, updates and recovery](docs/vps.md) for the production guide.
 Category names match exactly first (longest first, so `fast food` beats `food`),
 then by unique prefix (`tra` → Transport).
 
-Commands: `/month` `/stats` `/last` `/cats` `/budget` `/export` `/undo` `/tz` `/help`.
+Commands: `/month` `/stats` `/last` `/cats` `/budget` `/export` `/undo` `/tz` `/cleanup` `/help`.
 
 ## Cloudflare deployment (alternative)
 
@@ -137,7 +137,7 @@ Points worth knowing before changing things:
 1. Open a private chat with the bot and send `/start`.
 2. Add the bot to your expense channel as an administrator.
 3. In the private bot chat, use `/linkchannel @channelname` or
-   `/linkchannel -1001234567890`. Both you and the bot must be channel admins.
+   `/linkchannel -1001234567890`. Both you and the bot must be channel admins. Give the bot permission to post and edit messages.
    Forward a channel post to the bot to discover a private channel's ID.
 4. Create or edit a channel post. Native Telegram two-column tables and plain
    text/Markdown tables are supported:
@@ -214,13 +214,13 @@ opening balance and contribution history. `/goalhelp` lists all examples.
   it when those bills are paid to avoid reserving the same money twice.
 - Opening savings are a starting balance, not a deposit on the setup date.
 
-Record actual transfers with `/save laptop 5500` and `/withdraw laptop 2000`.
-Optionally append `YYYY-MM-DD` for past transfers. Or include rows in the daily
+Record actual transfers with `/save laptop 5500 @ Card` and `/withdraw laptop 2000 @ Card`.
+For past transfers, put `YYYY-MM-DD` before `@ Card`. Or include rows in the daily
 channel table:
 
 ```text
-save:laptop | 5500.77
-withdraw:laptop | 500
+save:laptop @ Card | 5500.77
+withdraw:laptop @ Card | 500
 ```
 
 Savings rows sync on edits just like expenses. They are excluded from expense
@@ -276,8 +276,50 @@ by running the tests. Rolling back the Worker code leaves old expense data usabl
 keep the additive schema and savings tables when rolling back.
 
 Development tests require Node 24 for the built-in SQLite
-adapter. They apply both migrations to an in-memory database and exercise native
+adapter. They apply all migrations to an in-memory database and exercise native
 channel payloads, edit ordering, rollback, exact savings, reminders and reports.
 `WRITE_DAILY_PDF=/tmp/daily.pdf npm test` writes a sample chart for visual review.
 
 See [interactive charts and live dashboard setup](docs/vps.md#interactive-charts-income-and-the-live-dashboard) for income table rows, HTTPS setup and browser editing.
+
+## Account balances and cleanup
+
+Create an account before logging activity, for example `/account Card 100000`.
+Every expense, income receipt, savings deposit and withdrawal belongs to an owned
+account. Private expense entry and reminders offer an account picker. Savings
+commands and channel rows can omit `@ Account` only when one active account makes
+the choice unambiguous. Dashboard forms always require an account.
+
+An account's recorded balance is its opening balance plus income, minus expenses
+and savings deposits, plus savings withdrawals, from its opening date onward.
+The opening balance is before that day's activity. Older activity is already
+represented by the opening balance and is not counted twice. Opening goal savings
+represent money saved before tracking began, not a new transfer. These are recorded
+balances; the bot does not move money at a bank. Negative account balances remain
+visible so missing income or real overdrafts can be reconciled.
+
+Migration `0007_account_ledger.sql` adds account ownership to savings and database
+checks for financial entries. Historical unassigned records are preserved in
+archived accounts named `Legacy unassigned ...`, with zero opening balances.
+Reconcile these accounts and records against your real accounts after upgrading;
+the migration does not guess their original funding source. Apply migrations
+before deploying the Worker. The Docker runtime applies them automatically and
+backs up an existing database before migrating.
+
+`/add` appends to the latest valid table for that day in the connected channel,
+including human-written posts. It preserves native table styles, existing rows,
+rich text, captions and Telegram text entities, and updates the written expense
+total. For posts imported before this upgrade, edit the original once so its full
+formatting can be captured. Keep one channel linked when using `/add`. The returned
+Telegram message is imported immediately. Repeated delivery of the same request
+cannot add another expense; ambiguous failures appear in `/syncstatus` for review.
+`/syncstatus` also checks channel administrator, posting and editing permissions.
+
+Send `/cleanup` and tap **Erase all my data** within five minutes to permanently
+erase your FinTrack database records: accounts, transactions, savings, income,
+categories, goals, budgets, settings, reminders, channel links, attachments, history
+and dashboard access tokens. The wipe is atomic and affects only your user.
+Other users, Telegram messages and existing backup files are preserved. Old channel
+posts can be imported again only after reconnecting and editing them. Send `/start`
+to begin again. This action has no in-bot undo; use `/cancel` or the Cancel button
+to abandon the confirmation.

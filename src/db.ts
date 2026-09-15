@@ -38,17 +38,28 @@ export class Db {
     if (existing) return existing.tz;
 
     const statements: Statement[] = [
-      this.d1.prepare('INSERT INTO users (id, tz) VALUES (?, ?)').bind(userId, this.defaultTz),
+      this.d1.prepare('INSERT OR IGNORE INTO users (id, tz) VALUES (?, ?)').bind(userId, this.defaultTz),
     ];
     DEFAULT_CATEGORIES.forEach(([name, emoji], i) => {
       statements.push(
         this.d1
-          .prepare('INSERT INTO categories (user_id, name, emoji, sort) VALUES (?, ?, ?, ?)')
+          .prepare('INSERT OR IGNORE INTO categories (user_id, name, emoji, sort) VALUES (?, ?, ?, ?)')
           .bind(userId, name, emoji, i),
       );
     });
     await this.d1.batch(statements);
     return this.defaultTz;
+  }
+
+  /** Consume a short-lived confirmation in the same transaction as the wipe. */
+  async cleanup(userId:number,token:string):Promise<boolean> {
+    const guard="EXISTS(SELECT 1 FROM sessions WHERE user_id=? AND state='cleanup' AND json_extract(payload,'$.token')=? AND json_extract(payload,'$.expires')>?)";
+    const now=Date.now();
+    const tables=['channel_add_requests','dashboard_tokens','channels','transactions','income','savings','reminders','deliveries','balance_checks','account_names','accounts','goals','aliases','budgets','alerts','categories','finance_preferences','channel_posts','entry_attachments','saved_views','logging_days','month_reviews','change_history','finance_revisions'];
+    const statements=tables.map(table=>this.d1.prepare(`DELETE FROM ${table} WHERE user_id=? AND ${guard}`).bind(userId,userId,token,now));
+    statements.push(this.d1.prepare(`DELETE FROM users WHERE id=? AND ${guard}`).bind(userId,userId,token,now));
+    statements.push(this.d1.prepare(`DELETE FROM sessions WHERE user_id=? AND ${guard}`).bind(userId,userId,token,now));
+    return ((await this.d1.batch(statements)).at(-1)?.meta.changes??0)>0;
   }
 
   async setTz(userId: number, tz: string): Promise<void> {
@@ -135,6 +146,7 @@ export class Db {
         .prepare('UPDATE transactions SET category_id = NULL WHERE user_id = ? AND category_id = ?')
         .bind(userId, id),
       this.d1.prepare('DELETE FROM budgets WHERE user_id = ? AND category_id = ?').bind(userId, id),
+      this.d1.prepare('DELETE FROM aliases WHERE user_id = ? AND category_id = ?').bind(userId, id),
       this.d1.prepare('DELETE FROM categories WHERE user_id = ? AND id = ?').bind(userId, id),
     ]);
   }
@@ -156,12 +168,14 @@ export class Db {
     note: string,
     spentOn: string,
     accountId: number | null = null,
+    event: string | null = null,
   ): Promise<number> {
+    accountId = await this.accounts.resolve(userId,accountId);
     const row = await this.d1
       .prepare(
-        'INSERT INTO transactions (user_id, category_id, amount, note, spent_on, account_id) VALUES (?, ?, ?, ?, ?, ?) RETURNING id',
+        'INSERT INTO transactions (user_id, category_id, amount, note, spent_on, account_id, dashboard_event) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(dashboard_event) DO UPDATE SET dashboard_event=excluded.dashboard_event RETURNING id',
       )
-      .bind(userId, categoryId, amount, note, spentOn, accountId)
+      .bind(userId, categoryId, amount, note, spentOn, accountId, event)
       .first<{ id: number }>();
     return row!.id;
   }
@@ -204,7 +218,7 @@ export class Db {
     const expenses=(await this.d1.prepare(`SELECT t.note AS label,t.amount,t.account_id,c.name AS category_name
       FROM transactions t LEFT JOIN categories c ON c.id=t.category_id WHERE t.user_id=? AND t.source_chat=? AND t.source_message=? ORDER BY t.id`).bind(userId,chat,message).all<{label:string;amount:number;account_id:number|null;category_name:string|null}>()).results;
     const income=(await this.d1.prepare('SELECT source AS label,amount_minor,account_id,passive FROM income WHERE user_id=? AND source_chat=? AND source_message=? ORDER BY id').bind(userId,chat,message).all<{label:string;amount_minor:number;account_id:number|null;passive:number}>()).results;
-    const savings=(await this.d1.prepare('SELECT g.name AS label,s.amount_minor FROM savings s JOIN goals g ON g.id=s.goal_id WHERE s.user_id=? AND s.source_chat=? AND s.source_message=? ORDER BY s.id').bind(userId,chat,message).all<{label:string;amount_minor:number}>()).results;
+    const savings=(await this.d1.prepare('SELECT g.name AS label,s.amount_minor,s.account_id FROM savings s JOIN goals g ON g.id=s.goal_id WHERE s.user_id=? AND s.source_chat=? AND s.source_message=? ORDER BY s.id').bind(userId,chat,message).all<{label:string;amount_minor:number;account_id:number|null}>()).results;
     return {expenses,income,savings};
   }
 

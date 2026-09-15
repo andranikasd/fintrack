@@ -11,12 +11,12 @@ const channel = { id: -1001234567890, type: 'channel', title: 'Smoke expenses' }
 const message = (id, text) => ({ update_id: id, message: { message_id: id, date: now, chat, from: user, text, entities: [{ type: 'bot_command', offset: 0, length: text.split(' ')[0].length }] } });
 const updates = [
   message(1, '/start'),
-  message(2, '/goal laptop | 960,381.77 | daily:3000 | 0'),
+  message(2, '/account Card 0'),
   message(3, '/linkchannel -1001234567890'),
   { update_id: 4, channel_post: { message_id: 1, date: now, chat: channel, rich_message: { blocks: [{ type: 'table', cells: [['Item', 'price'], ['metro', '150'], ['redline', '600']].map(row => row.map(text => ({ text, align: 'center', valign: 'middle' }))) }] } } },
-  message(5, '/save laptop 5500'),
-  message(6, '/chartpdf 7'),
-  message(7, '/account Card 0'),
+  message(5, '/goal laptop | 960,381.77 | daily:3000 | 0'),
+  message(6, '/save laptop 5500 @ Card'),
+  message(7, '/chartpdf 7'),
   message(8, '/income Salary @ Card 450000'),
   message(9, '/dashboard'),
 ];
@@ -26,7 +26,7 @@ const fake = async (url, options = {}) => {
   let result = true;
   if (method === 'getMe') result = { id: 999, is_bot: true, first_name: 'Smoke bot', username: 'fintrack_smoke_bot' };
   if (method === 'getChat') result = channel;
-  if (method === 'getChatMember') result = { status: 'administrator', user };
+  if (method === 'getChatMember') result = { status: 'administrator', user, can_post_messages:true, can_edit_messages:true };
   if (method === 'sendDocument') {
     let size = 0;
     for await (const part of options.body) size += Buffer.byteLength(part);

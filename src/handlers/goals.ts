@@ -1,3 +1,4 @@
+import { accountEntry } from '../lib/account-entry';
 import { Composer, InlineKeyboard } from 'grammy';
 import type { AppContext } from '../context';
 import { todayIn } from '../lib/dates';
@@ -20,7 +21,7 @@ Create or update a goal (amounts are AMD):
 /goal laptop 960381.77 2027-03-15 0 6000
 Name | target | deadline YYYY-MM-DD OR daily:3000 | starting saved | optional daily cap
 
-Workflow: run /goal to see how much to set aside today, move that money yourself, then confirm it with /save laptop 5500. Use /withdraw laptop 2000 when money comes back out. Confirmed saves update the goal; they do not move money automatically.
+Workflow: run /goal to see how much to set aside today, move that money yourself, then confirm it with /save laptop 5500 @ Card. Use /withdraw laptop 2000 @ Card when money comes back out. Confirmed saves increase the goal and reduce the selected account balance; withdrawals return money to an account. They do not move bank funds automatically.
 /funding shared 20000 — include confirmed savings in your monthly spending limit and protect a 20,000 reserve
 /funding separate — savings have separate funding (default)
 /remind 20:00 — daily savings reminder in your timezone
@@ -62,13 +63,17 @@ goals.command('goal', async ctx => {
 });
 goals.command('goalhelp',ctx=>ctx.reply(USAGE));
 for (const command of ['save','withdraw'] as const) goals.command(command,async ctx=> {
-  const m = /^(.+?)\s+([\d,.]+[km]?)(?:\s+(\d{4}-\d{2}-\d{2}))?$/i.exec(ctx.match.trim());
+  const m = /^(.+?)\s+([\d,.]+[km]?)(?:\s+(\d{4}-\d{2}-\d{2}))?$/i.exec(accountEntry(ctx.match.trim()).label);
   const amount = m ? parseMinor(m[2]!) : null;
   const day = m?.[3] ?? todayIn(ctx.tz);
-  if (!m || amount===null || !validDate(day) || day>todayIn(ctx.tz)) { await ctx.reply(`Use /${command} laptop 5500, optionally followed by YYYY-MM-DD.`); return; }
+  if (!m || amount===null || !validDate(day) || day>todayIn(ctx.tz)) { await ctx.reply(`Use /${command} laptop 5500, optionally followed by YYYY-MM-DD, then @ Card.`); return; }
   const goal = findGoal(await ctx.db.finance.goals(ctx.userId),m[1]!);
   if (!goal) { await ctx.reply('Unknown goal. Create one with /goal.'); return; }
-  const ok = await ctx.db.finance.contribute(ctx.userId,goal.id,amount*(command==='withdraw'?-1:1),day,`message:${ctx.chat.id}:${ctx.message!.message_id}`);
+  const hint=accountEntry(ctx.match.trim());
+  const account=hint.accountName?await ctx.db.accounts.named(ctx.userId,hint.accountName):null;
+  if(hint.accountName&&!account) { await ctx.reply('Unknown account. Use /accounts.'); return; }
+  const accountId=await ctx.db.accounts.resolve(ctx.userId,account?.id??null);
+  const ok = await ctx.db.finance.contribute(ctx.userId,goal.id,amount*(command==='withdraw'?-1:1),day,`message:${ctx.chat.id}:${ctx.message!.message_id}`,accountId);
   await ctx.reply(ok ? `${command==='save'?'Saved':'Withdrawn'} ${minorMoney(amount,ctx.sign)} for ${goal.name} on ${day}. /goal shows the updated plan.` : 'Already recorded, or withdrawal exceeds the saved balance.');
 });
 goals.command('funding',async ctx=> {
@@ -104,6 +109,7 @@ goals.callbackQuery(/^saving:(yes|other|skip):(\d+)$/,async ctx=> {
     await ctx.db.setState(ctx.userId,'saving_amount',{id});
     await ctx.reply(`How much did you transfer on ${reminder.day}? Send an amount, or /cancel.`); return;
   }
+  if(ctx.match[1]==='yes') { await chooseReminderAccount(ctx,id,reminder.amount_minor); return; }
   const ok = await ctx.db.finance.resolveReminder(ctx.userId,id,ctx.match[1]==='skip'?null:reminder.amount_minor);
   await ctx.editMessageText(ok ? (ctx.match[1]==='skip'?'Skipped. The next plan will recalculate.':`Confirmed ${minorMoney(reminder.amount_minor,ctx.sign)} on ${reminder.day}.`) : 'Savings changed since this reminder. Use /goal to refresh; record any additional transfer with /save.');
 });
@@ -114,7 +120,23 @@ goals.on('message:text',async (ctx,next)=> {
   const amount = parseMinor(ctx.message.text);
   if (amount===null) { await ctx.reply('Send a positive amount, e.g. 5500 or /cancel.'); return; }
   const id = Number(state.payload.id);
-  const ok = await ctx.db.finance.resolveReminder(ctx.userId,id,amount);
+  await chooseReminderAccount(ctx,id,amount);
+});
+
+async function chooseReminderAccount(ctx:AppContext,id:number,amount:number) {
+  const accounts=(await ctx.db.accounts.list(ctx.userId,todayIn(ctx.tz))).filter(a=>!a.archived);
+  if(!accounts.length) { await ctx.reply('Create an account first with /account, then confirm this reminder again.'); return; }
+  const request=crypto.randomUUID().replaceAll('-','').slice(0,24);
+  const keyboard=new InlineKeyboard();
+  for(const account of accounts) keyboard.text(account.name,`savingaccount:${account.id}:${request}`).row();
+  await ctx.db.setState(ctx.userId,'saving_account',{id,amount,request});
+  await ctx.reply('Which account funded this savings transfer?',{reply_markup:keyboard});
+}
+goals.callbackQuery(/^savingaccount:(\d+):([a-f0-9]{24})$/,async ctx=>{
+  const state=await ctx.db.getState(ctx.userId);
+  if(state?.state!=='saving_account'||state.payload.request!==ctx.match[2]){await ctx.answerCallbackQuery({text:'This request expired. Open the reminder again.'});return;}
+  await ctx.answerCallbackQuery();
+  const ok=await ctx.db.finance.resolveReminder(ctx.userId,Number(state.payload.id),Number(state.payload.amount),Number(ctx.match[1]));
   await ctx.db.clearState(ctx.userId);
-  await ctx.reply(ok?`Confirmed ${minorMoney(amount,ctx.sign)}. /goal for progress.`:'Already handled, or savings changed since this reminder. Use /goal and /save for an additional transfer.');
+  await ctx.editMessageText(ok?'Savings confirmed and account balance updated.':'Already handled, or savings changed. Use /goal and /save.');
 });

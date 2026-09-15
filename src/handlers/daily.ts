@@ -38,7 +38,22 @@ for (const command of ['today','yesterday'] as const) daily.command(command,asyn
 });
 daily.command('syncstatus',async ctx=> {
   const errors = await ctx.db.finance.errors(ctx.userId);
-  await ctx.reply(errors.length?errors.map(e=>`Channel ${e.chat_id}, post #${e.message_id}: ${e.error}`).join('\n'):'All received posts parsed successfully. Only posts received since linking (or edited afterward) are included.');
+  const channels=await ctx.db.finance.channels(ctx.userId);
+  const lines:string[]=[];
+  if(!channels.length) lines.push('No channel connected. Use /linkchannel.');
+  for(const channel of channels) {
+    try {
+      const [owner,bot]=await Promise.all([ctx.api.getChatMember(channel.chat_id,ctx.userId),ctx.api.getChatMember(channel.chat_id,ctx.me.id)]);
+      const ready=['creator','administrator'].includes(owner.status)&&bot.status==='administrator'&&bot.can_post_messages&&bot.can_edit_messages;
+      lines.push(`${channel.title}: ${ready?'connected; posting and editing enabled':'restore administrator, posting and editing permissions'}`);
+    } catch { lines.push(`${channel.title}: cannot verify access. Restore permissions or use /unlinkchannel.`); }
+  }
+  lines.push(...errors.map(e=>`Channel ${e.chat_id}, post #${e.message_id}: ${e.error}`));
+  const requests=(await ctx.env.DB.prepare("SELECT event_key,chat_id,status FROM channel_add_requests WHERE user_id=? AND status!='done' LIMIT 10").bind(ctx.userId).all<{event_key:string;chat_id:number;status:string}>()).results;
+  for(const request of requests)lines.push(`Channel ${request.chat_id}: /add request ${request.event_key} is ${request.status}. Check the source table before submitting another command.`);
+  if(!errors.length)lines.push('No received posts have parsing errors. History before linking is imported only when you edit those posts.');
+  await ctx.reply(lines.join('\n'));
+
 });
 export async function dailySeries(db: Db,user: number,from: string,to: string) {
   const [expenses,savings] = await Promise.all([db.byDay(user,from,to),db.finance.savingsByDay(user,from,to)]);

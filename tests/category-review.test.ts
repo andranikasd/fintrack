@@ -7,7 +7,7 @@ import { testDb } from './sqlite';
 
 async function setup() {
   const { db, d1 } = testDb();
-  await db.ensureUser(1);
+  await db.ensureUser(1); await db.accounts.create(1,'Test account',0,'2000-01-01','test-account:1');
   const day = todayIn('Asia/Yerevan');
   const now = Math.floor(Date.now() / 1000);
   await db.finance.link(-1001, 1, 'Expenses');
@@ -71,9 +71,9 @@ describe('category suggestions in reports', () => {
     } });
     expect((await db.byCategory(1, day, day)).find(c => c.name === 'Transport')?.total).toBe(200);
     expect((await db.uncategorized(1, day)).map(r => r.label)).not.toContain('metro');
-    const nextDay = addDays(day, 1);
+    const nextDay = addDays(day, -1);
     await bot.handleUpdate({ update_id: 1000, channel_post: {
-      message_id: 2, date: now + 86400, chat: { id: -1001, type: 'channel', title: 'Expenses' },
+      message_id: 2, date: now - 86400, chat: { id: -1001, type: 'channel', title: 'Expenses' },
       text: `${nextDay}\nItem | price\nMETRO | 150`,
     } });
     expect((await db.byCategory(1, nextDay, nextDay)).find(c => c.name === 'Transport')?.total).toBe(150);

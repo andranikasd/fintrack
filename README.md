@@ -406,3 +406,25 @@ Other users, Telegram messages and existing backup files are preserved. Old chan
 posts can be imported again only after reconnecting and editing them. Send `/start`
 to begin again. This action has no in-bot undo; use `/cancel` or the Cancel button
 to abandon the confirmation.
+
+### Goal planning in exported reports
+
+The HTML dashboard includes a savings overview and a dedicated **Goal planner**.
+Select a goal to compare its reconstructed balance history, current plan and
+recent net contribution pace. It includes 90 days of goal history independently
+of the ledger export's selected dates, weekly deposit/withdrawal charts, a
+contribution calendar, milestones and suggestions based on recorded activity.
+Opening savings count toward progress but not contribution trends.
+
+The local **What if** preview models a daily amount, an extra deposit tomorrow,
+and a pause of up to one year. Existing daily caps apply to the daily amount;
+extra deposits are shown separately. Forecasts start tomorrow, assume no interest
+or future withdrawals, and do not establish that funds will be available.
+Recent pace uses net recorded savings over 30 calendar days and requires deposits
+on at least two days across a week. Missing logging can understate this pace.
+The report never records simulated deposits or changes a saved goal.
+
+Use **Print / save PDF** while viewing the planner to export the selected goal,
+charts, scenario assumptions and suggestions. Your scenario and selected goal
+remain selected afterward. Changes to real plans still happen through `/goal`
+in Telegram. Everything works offline without external chart or font downloads.

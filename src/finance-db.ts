@@ -114,6 +114,20 @@ export class FinanceDb {
     return (await this.db.prepare(`SELECT saved_on AS day,SUM(CASE WHEN amount_minor>0 THEN amount_minor ELSE 0 END) AS deposits,
       SUM(CASE WHEN amount_minor<0 THEN -amount_minor ELSE 0 END) AS withdrawals FROM savings WHERE user_id=? AND saved_on BETWEEN ? AND ? GROUP BY saved_on ORDER BY saved_on`).bind(user,from,to).all<{day:string;deposits:number;withdrawals:number}>()).results;
   }
+  /** Aggregate complete goal history independently of the exported ledger's row limit. */
+  async goalHistory(user:number,from:string,to:string){
+    const [daily,balances]=await Promise.all([
+      this.db.prepare(`SELECT goal_id,saved_on AS day,
+        SUM(CASE WHEN amount_minor>0 THEN amount_minor ELSE 0 END) AS deposits,
+        SUM(CASE WHEN amount_minor<0 THEN -amount_minor ELSE 0 END) AS withdrawals
+        FROM savings WHERE user_id=? AND saved_on BETWEEN ? AND ? GROUP BY goal_id,saved_on ORDER BY saved_on`)
+        .bind(user,from,to).all<{goal_id:number;day:string;deposits:number;withdrawals:number}>(),
+      this.db.prepare(`SELECT g.id AS goal_id,g.opening_minor+COALESCE(SUM(s.amount_minor),0) AS balance,
+        MIN(s.saved_on) AS firstEntry FROM goals g LEFT JOIN savings s ON s.goal_id=g.id AND s.user_id=g.user_id AND s.saved_on<=?
+        WHERE g.user_id=? GROUP BY g.id`).bind(to,user).all<{goal_id:number;balance:number;firstEntry:string|null}>(),
+    ]);
+    return {from,to,daily:daily.results,balances:balances.results};
+  }
   async savingsTotal(user: number, from: string, to: string) {
     return (await this.db.prepare('SELECT COALESCE(SUM(amount_minor),0) AS total FROM savings WHERE user_id=? AND saved_on BETWEEN ? AND ?').bind(user,from,to).first<{total:number}>())?.total ?? 0;
   }

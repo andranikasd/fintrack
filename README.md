@@ -258,16 +258,55 @@ choices; **Back** keeps them. You can also start with `/add Coffee`.
 Type a previous item name to reuse its category, or select **New category** in
 the category step without leaving the draft.
 
-`/new` or **Add entry** offers expenses, income, savings deposits and withdrawals.
+`/new` or **Add entry** offers expenses, income, savings deposits, withdrawals,
+account transfers, recurring bills and saved drafts.
 `/income`, `/save` and `/withdraw` also start their guided flows without arguments.
 Expense amounts use whole AMD; income and savings support two decimal places.
 Confirmations offer **Edit amount**, **Change account** and **Undo entry** for
-expenses and manual income. Undo asks for confirmation. Channel expense corrections
-update the original table; channel income corrections still use the source table.
+expenses, income, savings deposits and withdrawals. Undo asks for confirmation.
+Channel corrections update the original table, preserving other rows and formatting.
 When a channel is linked, guided expenses also update its daily table.
 Use **Recent** or `/last` to open an expense review. Manual entries can also
 change their name, date and category; a stale correction is rejected. The main
 keyboard provides direct expense, income, recent-entry and account buttons.
+
+### Setup, drafts, transfers and recurring bills
+
+- `/account` starts guided account setup. `/accounts` offers edit buttons for names,
+  opening balances/dates, passive-income settings and archiving. Changes cannot
+  leave an account negative, including on an earlier recorded date.
+- `/goal` creates the first goal or shows existing goals with **Edit plan** and
+  **New goal** buttons. Choose a target, daily amount or deadline, starting savings,
+  and an optional daily cap. Editing a plan preserves recorded contributions.
+- Navigating to reports, accounts or another guided form saves unfinished entry
+  and setup drafts. `/resume` or `/drafts` restores them; **Discard** removes one.
+  `/cancel` discards only the active draft. Completed entries remain unchanged.
+- Matching same-day expenses, income and savings show a duplicate warning in both
+  guided and quick text entry. **Save anyway** explicitly records another entry.
+  Retries of an already recorded request do not create another entry.
+- `/transfer` records money already moved between two active accounts. The amount
+  supports two decimals. Both balances update atomically; transfers do not change
+  income, spending, budgets or net cash flow. `/transfers` offers confirmed undo,
+  which is refused if reversing the transfer would overdraw an account. HTML and
+  PDF reports include transfer details; PDF account reconciliation includes net moves.
+- `/bill` guides weekly or monthly recurring bill setup. `/bills` edits or pauses
+  reminders. Notifications follow `/tz`, normally within five minutes of the chosen
+  time, and repeat daily while pending. **Paid today** records the expense only
+  after confirmation; a matching existing expense can be linked instead. **Skip this
+  payment** advances the schedule after confirmation without recording spending.
+  Insufficient funds keep the reminder pending. Monthly dates clamp to month end
+  and return to the original day in longer months. Missed periods are handled one
+  at a time; only confirmed payments become expenses. Correct a different payment
+  amount or date using the receipt buttons. Editing or pausing a rule invalidates
+  its previous reminder buttons.
+
+Migration `0009_guided_finance.sql` preserves the existing ledger and adds storage
+for drafts, account transfers and bills, plus savings-balance guards. Deploy the
+migration and matching application together during a coordinated restart. The
+Node runtime creates a pre-migration snapshot. Do not run older application code
+against a ledger containing account transfers: older balance queries ignore them.
+Prefer a forward fix. Restoring a pre-upgrade snapshot requires stopping the bot
+and explicitly reconciling any activity recorded after that snapshot.
 
 All entry and correction happen in Telegram. Dashboard files are static exports;
 they allow local filtering and CSV downloads but cannot write to your ledger.

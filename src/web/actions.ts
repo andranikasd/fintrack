@@ -1,3 +1,4 @@
+import { correctSaving } from '../lib/ledger-entry';
 import { WorkspaceDb, WorkspaceError } from '../workspace-db';
 import { workspaceAction, workspaceActions } from './workspace-actions';
 import type { Db } from '../db';
@@ -117,6 +118,9 @@ export async function dashboardAction(db: Db, sql: Database, user: number, tz: s
     case 'edit':
     case 'delete': {
       const recordId = id(body.id);
+      if(body.kind==='saving'||body.kind==='withdrawal'){
+        await correctSaving(db,sql,user,body.kind,recordId,body.expected as Record<string,unknown>,body.action==='delete'?null:{amount:amount(body.amount),accountId:(await account())!,goalId:id(body.goalId),day});return;
+      }
       if (body.kind!=='expense' && body.kind!=='income') throw new ActionError('Use Telegram to correct savings transfers.');
       const table=body.kind==='expense'?'transactions':'income';
       const row=await sql.prepare(`SELECT * FROM ${table} WHERE user_id=? AND id=?`).bind(user,recordId).first<Record<string,unknown>>();

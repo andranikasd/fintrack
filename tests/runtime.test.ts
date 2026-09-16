@@ -20,7 +20,7 @@ describe('production SQLite storage', () => {
   it('migrates once, persists across restarts, and stores exact savings', async () => {
     const path = join(temporary(), 'fintrack.sqlite');
     const db = open(path);
-    expect(db.migrate('migrations')).toEqual(['0001_init.sql', '0002_channel_savings.sql', '0003_income.sql', '0004_dashboard.sql', '0005_accounts.sql', '0006_dashboard_workspace.sql', '0007_account_ledger.sql', '0008_nonnegative_accounts.sql']);
+    expect(db.migrate('migrations')).toEqual(['0001_init.sql', '0002_channel_savings.sql', '0003_income.sql', '0004_dashboard.sql', '0005_accounts.sql', '0006_dashboard_workspace.sql', '0007_account_ledger.sql', '0008_nonnegative_accounts.sql', '0009_guided_finance.sql']);
     await db.prepare('INSERT INTO users(id) VALUES(?)').bind(123).run();
     await db.prepare("INSERT INTO accounts(user_id,name,opening_on,opening_minor) VALUES(123,'Card','2000-01-01',100000000)").run();
     await db.prepare("INSERT INTO goals(user_id,name,target_minor,daily_minor) VALUES(123,'laptop',96038177,300000)").run();

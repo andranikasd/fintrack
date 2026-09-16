@@ -93,7 +93,7 @@ export async function collectReport(
   to = to > today ? today : to;
   if (from > to) throw new Error('The report period has not started yet.');
   const trendFrom = monthStart(shiftMonth(monthOf(to), -5));
-  const [total, byCategory, byDay, byMonth, transactions, budgets, incomes, savings, accounts, openingAccounts, goals] = await Promise.all([
+  const [total, byCategory, byDay, byMonth, transactions, budgets, incomes, savings, accounts, openingAccounts, goals, transfers] = await Promise.all([
     db.totalBetween(userId, from, to),
     db.byCategory(userId, from, to),
     db.byDay(userId, from, to),
@@ -102,9 +102,10 @@ export async function collectReport(
     db.budgets(userId),
     db.income.list(userId,from,to),db.finance.savingsEntries(userId,from,to),
     db.accounts.list(userId,to),db.accounts.list(userId,addDays(from,-1)),db.finance.goals(userId),
+    db.transfers.list(userId,from,to),
   ]);
 
-  if (transactions.length + incomes.length + savings.length > 10000) throw new Error('More than 10,000 records. Choose a shorter report period.');
+  if (transactions.length + incomes.length + savings.length + transfers.length > 10000) throw new Error('More than 10,000 records. Choose a shorter report period.');
   const categoryBudgets = new Map<number, number>();
   let budgetOverall = 0;
   // A partial-month range cannot be compared with a whole-month spending limit.
@@ -127,7 +128,7 @@ export async function collectReport(
     currency,
     generatedOn: today,
     singleMonth,
-    finance: { incomes, savings, accounts, openingAccounts, goals },
+    finance: { incomes, savings, accounts, openingAccounts, goals, transfers },
   };
 }
 

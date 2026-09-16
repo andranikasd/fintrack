@@ -65,7 +65,7 @@ export async function handleChannelPost(ctx: AppContext, db: Db, allowlist: Set<
       if (!account.label || account.label.length>60) throw new Error('Account names must be 1–60 characters.');
       if (account.accountName) throw new Error('Account rows do not need “@ Account”: use account:Card | 100000.');
       const existing=await db.accounts.named(linked.user_id,account.label,true);
-      if(existing && (existing.opening_minor!==row.amountMinor || existing.opening_on!==parsed.day)) throw new Error('Account already exists with a different opening balance or date. Edit it in /dashboard.');
+      if(existing && (existing.opening_minor!==row.amountMinor || existing.opening_on!==parsed.day)) throw new Error('Account already exists with a different opening balance or date. Edit it in /accounts.');
       if(setups.some(a=>a.name.toLowerCase()===account.label.toLowerCase())) throw new Error('Use only one setup row per account.');
       if(!existing) setups.push({name:account.label,amount:row.amountMinor});
     }
@@ -78,7 +78,7 @@ export async function handleChannelPost(ctx: AppContext, db: Db, allowlist: Set<
       if(account?.archived) throw new Error('Choose an active account.');
       if (entry.accountName&&!account&&!setup) throw new Error('Unknown account: '+entry.accountName+'. Create it with /account or in the dashboard.');
       if (!entry.accountName && accounts.filter(a=>!a.archived).length+setups.length!==1) throw new Error('This row needs an account. Add “ @ Account” to the item, then edit the channel post.');
-      if(row.kind==='income'&&!account&&!setup&&accounts.filter(a=>!a.archived).length+setups.length!==1) throw new Error('Income needs a receiving account. Use income:Salary @ Card and create Card in /dashboard or /account.');
+      if(row.kind==='income'&&!account&&!setup&&accounts.filter(a=>!a.archived).length+setups.length!==1) throw new Error('Income needs a receiving account. Use income:Salary @ Card and create Card with /account.');
       const accountId=account?.id ?? (!entry.accountName&&accounts.filter(a=>!a.archived).length===1?accounts.find(a=>!a.archived)!.id:undefined);
       const accountName=setup?.name ?? (!entry.accountName&&setups.length===1?setups[0]!.name:undefined);
       if (row.kind === 'income') return {categoryId:null,label:entry.label,amount:row.amountMinor,income:true,accountId,accountName,passive:entry.passive};

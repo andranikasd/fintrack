@@ -11,6 +11,12 @@ const HELP = `<b>FinTrack</b> — spending in one line.
 /income — record income step by step; /incomes shows recent receipts
 /save or /withdraw — choose a savings goal, account and amount
 /new — choose any entry type
+/account — guided account setup; /accounts to edit balances and settings
+/goal — create or edit savings plans with buttons
+/resume — continue an unfinished draft, even after browsing reports
+/transfer — move recorded money between accounts; /transfers to review or undo
+/bill — set up a weekly or monthly bill reminder; /bills to edit or pause
+/savings — review, correct or undo savings deposits and withdrawals
 
 <b>Quick text entry (optional)</b>
 <code>1500 cafe latte</code>
@@ -20,8 +26,10 @@ const HELP = `<b>FinTrack</b> — spending in one line.
 <code>03.09 45000 rent</code>
 
 Amount first or last, both work. <code>k</code> = thousand, <code>m</code> = million.
-Create an account first with /account Card 100000. Every expense and savings transfer needs an account. Add @ Card or use the account picker.
+Create an account first with /account. Every expense and savings transfer needs an account. Add @ Card or use the account picker.
 No category in the text? The bot asks with one tap.
+Guided entry warns about matching entries before saving. Choose Save anyway only for a separate purchase or receipt.
+Bill reminders record nothing until you confirm payment. Transfers never count as income or spending.
 
 <b>Channel, daily reports and savings</b>
 /add metro 150 @ Card — add spending to the channel table

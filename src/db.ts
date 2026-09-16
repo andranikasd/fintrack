@@ -1,3 +1,5 @@
+import { BillsDb } from './bills-db';
+import { TransfersDb } from './transfers-db';
 import { WorkspaceDb } from './workspace-db';
 import { AccountsDb } from './accounts-db';
 import { IncomeDb } from './income-db';
@@ -21,6 +23,8 @@ const DEFAULT_CATEGORIES: Array<[string, string]> = [
 ];
 
 export class Db {
+  readonly bills: BillsDb;
+  readonly transfers: TransfersDb;
   readonly workspace: WorkspaceDb;
   readonly finance: FinanceDb;
   readonly income: IncomeDb;
@@ -28,7 +32,7 @@ export class Db {
   constructor(
     private readonly d1: Database,
     private readonly defaultTz: string,
-  ) { this.finance = new FinanceDb(d1); this.income = new IncomeDb(d1); this.accounts = new AccountsDb(d1); this.workspace = new WorkspaceDb(d1); }
+  ) { this.bills=new BillsDb(d1); this.transfers=new TransfersDb(d1); this.finance = new FinanceDb(d1); this.income = new IncomeDb(d1); this.accounts = new AccountsDb(d1); this.workspace = new WorkspaceDb(d1); }
 
   async ensureUser(userId: number): Promise<string> {
     const existing = await this.d1
@@ -55,7 +59,7 @@ export class Db {
   async cleanup(userId:number,token:string):Promise<boolean> {
     const guard="EXISTS(SELECT 1 FROM sessions WHERE user_id=? AND state='cleanup' AND json_extract(payload,'$.token')=? AND json_extract(payload,'$.expires')>?)";
     const now=Date.now();
-    const tables=['channel_add_requests','dashboard_tokens','channels','transactions','income','savings','reminders','deliveries','balance_checks','account_names','accounts','goals','aliases','budgets','alerts','categories','finance_preferences','channel_posts','entry_attachments','saved_views','logging_days','month_reviews','change_history','finance_revisions'];
+    const tables=['saved_drafts','bill_occurrences','recurring_bills','account_transfers','channel_add_requests','dashboard_tokens','channels','transactions','income','savings','reminders','deliveries','balance_checks','account_names','accounts','goals','aliases','budgets','alerts','categories','finance_preferences','channel_posts','entry_attachments','saved_views','logging_days','month_reviews','change_history','finance_revisions'];
     const statements=tables.map(table=>this.d1.prepare(`DELETE FROM ${table} WHERE user_id=? AND ${guard}`).bind(userId,userId,token,now));
     statements.push(this.d1.prepare(`DELETE FROM users WHERE id=? AND ${guard}`).bind(userId,userId,token,now));
     statements.push(this.d1.prepare(`DELETE FROM sessions WHERE user_id=? AND ${guard}`).bind(userId,userId,token,now));
@@ -464,6 +468,30 @@ export class Db {
       .bind(userId, state, JSON.stringify(payload))
       .run();
   }
+
+  /** Move an unfinished form out of the text-answer slot before navigation. */
+  async pauseDraft(user:number):Promise<string|null>{
+    const state=await this.getState(user);
+    if(!state||!['guided_entry','guided_form'].includes(state.state)||typeof state.payload.request!=='string')return null;
+    const request=state.payload.request.replaceAll('-','');
+    await this.d1.batch([
+      this.d1.prepare('INSERT INTO saved_drafts(user_id,request,state,payload) VALUES(?,?,?,?) ON CONFLICT(user_id,request) DO UPDATE SET state=excluded.state,payload=excluded.payload,updated_at=CURRENT_TIMESTAMP').bind(user,request,state.state,JSON.stringify(state.payload)),
+      this.d1.prepare('DELETE FROM sessions WHERE user_id=? AND state=? AND payload=?').bind(user,state.state,JSON.stringify(state.payload)),
+    ]);
+    return request;
+  }
+  async drafts(user:number){return (await this.d1.prepare('SELECT request,state,payload,updated_at FROM saved_drafts WHERE user_id=? ORDER BY updated_at DESC LIMIT 30').bind(user).all<{request:string;state:string;payload:string;updated_at:string}>()).results;}
+  async resumeDraft(user:number,request:string):Promise<boolean>{
+    const draft=await this.d1.prepare('SELECT * FROM saved_drafts WHERE user_id=? AND request=?').bind(user,request).first<{state:string;payload:string}>();
+    if(!draft)return false;
+    await this.pauseDraft(user);
+    await this.d1.batch([
+      this.d1.prepare('INSERT INTO sessions(user_id,state,payload) SELECT user_id,state,payload FROM saved_drafts WHERE user_id=? AND request=? ON CONFLICT(user_id) DO UPDATE SET state=excluded.state,payload=excluded.payload,updated_at=CURRENT_TIMESTAMP').bind(user,request),
+      this.d1.prepare('DELETE FROM saved_drafts WHERE user_id=? AND request=?').bind(user,request),
+    ]);
+    return true;
+  }
+  async discardDraft(user:number,request:string){await this.d1.prepare('DELETE FROM saved_drafts WHERE user_id=? AND request=?').bind(user,request).run();}
 
   async clearState(userId: number): Promise<void> {
     await this.d1.prepare('DELETE FROM sessions WHERE user_id = ?').bind(userId).run();

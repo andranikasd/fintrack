@@ -1,4 +1,6 @@
-import { correctChannelExpense } from '../lib/channel-correction';
+import { duplicateEntries, duplicateSignature } from '../lib/duplicate-entry';
+import { ledgerEntry, type EntryKind } from '../lib/ledger-entry';
+import { correctChannelEntry } from '../lib/channel-correction';
 import { addToChannel, escapeHtml } from './entry';
 import { Composer, InlineKeyboard } from 'grammy';
 import type { AppContext } from '../context';
@@ -14,9 +16,9 @@ type Kind = 'expense'|'income'|'saving'|'withdrawal';
 type Step = 'amount'|'label'|'category'|'category_name'|'account'|'day'|'review';
 interface Draft {
   request: string; kind: Kind; step: Step; amount?: number; label?: string;
-  categoryId?: number|null; accountId?: number; goalId?: number; day: string;
-  channel?: boolean; blocked?: boolean; editing?: boolean; labelEdited?: boolean; digits?: string; items?: Array<{label:string;categoryId:number|null}>; page?: number;
-  edit?: {id:number; kind:'expense'|'income'; expected:Record<string,unknown>;channel?:boolean};
+  categoryId?: number|null; accountId?: number; goalId?: number; day: string; passive?:boolean;
+  duplicateKey?:string; channel?: boolean; blocked?: boolean; editing?: boolean; labelEdited?: boolean; digits?: string; items?: Array<{label:string;categoryId:number|null}>; page?: number;
+  edit?: {id:number; kind:EntryKind; expected:Record<string,unknown>;channel?:boolean};
 }
 const titles:Record<Kind,string>={expense:'Expense',income:'Income',saving:'Savings deposit',withdrawal:'Savings withdrawal'};
 export const guidedEntry=new Composer<AppContext>();
@@ -28,12 +30,27 @@ async function active(ctx:AppContext):Promise<Draft|null>{const state=await ctx.
 export async function entryMenu(ctx:AppContext):Promise<void> {
   await ctx.db.clearState(ctx.userId);
   const kb=new InlineKeyboard().text('Expense','new:expense').text('Income','new:income').row()
-    .text('Save money','new:saving').text('Withdraw savings','new:withdrawal');
+    .text('Save money','new:saving').text('Withdraw savings','new:withdrawal').row().text('Account transfer','setup:transfer:new').text('Recurring bills','bills:list').row().text('Continue a draft','drafts:list');
   await ctx.reply('What would you like to record? I’ll guide you through the item, account and amount. Nothing is recorded until you save.',{reply_markup:kb});
 }
 guidedEntry.command('new',entryMenu);
 guidedEntry.hears('➕ Add entry',entryMenu);
 guidedEntry.callbackQuery('entry:new',async ctx=>{await ctx.answerCallbackQuery();await entryMenu(ctx);});
+
+export async function showCurrentEntry(ctx:AppContext){const d=await active(ctx);if(d)await show(ctx,d);}
+
+/** Give quick text entries the same duplicate review as the guided flow. */
+export async function offerDuplicateReview(ctx:AppContext,input:{kind:Kind;amount:number;label:string;day:string;accountId:number;categoryId?:number|null;goalId?:number;channel?:boolean;passive?:boolean},event:string):Promise<boolean>{
+  const table=input.channel?'channel_add_requests':input.kind==='expense'?'transactions':input.kind==='income'?'income':'savings';
+  const column=table==='transactions'?'dashboard_event':'event_key';
+  if(await ctx.env.DB.prepare(`SELECT 1 FROM ${table} WHERE user_id=? AND ${column}=?`).bind(ctx.userId,event).first())return false;
+  const matches=await duplicateEntries(ctx.env.DB,ctx.userId,input);
+  if(!matches.length)return false;
+  const d:Draft={...input,request:crypto.randomUUID(),step:'review'};
+  d.duplicateKey=duplicateSignature(d,matches.map(r=>r.id));
+  await show(ctx,d,`Possible duplicate: a matching ${input.kind} entry already exists on ${input.day}. Choose Save anyway only for another transaction.`);
+  return true;
+}
 
 async function show(ctx:AppContext,d:Draft,error?:string):Promise<void> {
   await store(ctx,d);
@@ -51,7 +68,8 @@ async function show(ctx:AppContext,d:Draft,error?:string):Promise<void> {
     if(d.kind==='saving'||d.kind==='withdrawal'){
       text+='Choose the savings goal.';
       for(const g of await ctx.db.finance.goals(ctx.userId))kb.text(`${g.name} · ${minorMoney(g.saved_minor,ctx.sign)}`,button(d,`goal:${g.id}`)).row();
-      if(!kb.inline_keyboard.length)text+='\nCreate a goal with /goal first. Your draft is kept until you start another command.';
+      if(!kb.inline_keyboard.length)text+='\nCreate a savings goal to continue. This entry will stay in Drafts.';
+      kb.text('New savings goal','setup:goal:new').row();
     }else {
       text+=d.kind==='income'?'Choose a recent source or type a name, for example Salary.':'Choose a recent item or type what you bought, for example Coffee.';
       if(!d.items){
@@ -81,7 +99,7 @@ async function show(ctx:AppContext,d:Draft,error?:string):Promise<void> {
     text+=d.kind==='income'||d.kind==='withdrawal'?'Which account received it?':'Which account paid for it?';
     if(suggested)text+='\nSuggested account comes first, based on your previous entries.';
     for(const a of accounts.sort((a,b)=>Number(b.id===suggested)-Number(a.id===suggested)))kb.text(`${a.id===suggested?'Suggested: ':''}${a.name} · ${minorMoney(a.balance_minor,ctx.sign)}`,button(d,`account:${a.id}`)).row();
-    if(!accounts.length)text+='\nCreate an account first: /account Card 100000, then start /new again.';
+    if(!accounts.length){text+='\nCreate an account to continue. This entry will stay in Drafts.';kb.text('New account','setup:account:new').row();}
   }
   if(d.step==='day') {
     text+='When did this happen? Choose a date or send YYYY-MM-DD.';
@@ -92,7 +110,7 @@ async function show(ctx:AppContext,d:Draft,error?:string):Promise<void> {
     if(d.blocked){
       kb.text('Check recent activity','entry:check').row();
     }else {
-    kb.text(d.edit?'Save correction':'Save entry',button(d,'save')).row()
+    kb.text(d.edit?'Save correction':d.duplicateKey?'Save anyway':'Save entry',button(d,d.duplicateKey?'save-anyway':'save')).row()
       .text('Edit amount',button(d,'field:amount')).text('Change account',button(d,'field:account')).row();
     if(!d.edit?.channel)kb.text('Change date',button(d,'field:day'));
     if(!d.edit?.channel)kb.text(d.kind==='saving'||d.kind==='withdrawal'?'Change goal':'Edit name',button(d,'field:label'));
@@ -157,36 +175,32 @@ guidedEntry.callbackQuery(/^new:(expense|income|saving|withdrawal)$/,async ctx=>
   await show(ctx,{request:crypto.randomUUID(),kind:ctx.match[1] as Kind,step:'label',day:todayIn(ctx.tz),channel:ctx.match[1]==='expense'&&(await ctx.db.finance.channels(ctx.userId)).length>0});
 });
 
-export function correctionKeyboard(kind:'expense'|'income',id:number):InlineKeyboard {
+export function correctionKeyboard(kind:EntryKind,id:number):InlineKeyboard {
   return new InlineKeyboard().text('Edit amount',`correct:${kind}:${id}:amount`).text('Change account',`correct:${kind}:${id}:account`).row()
     .text('Undo entry',`correct:${kind}:${id}:undo`).text('Add another','entry:new');
 }
-async function record(ctx:AppContext,kind:'expense'|'income',id:number) {
-  if(kind==='expense'){
-    const row=await ctx.db.transaction(ctx.userId,id);
-    return row?{id,kind,amount:row.amount*100,label:row.note,categoryId:row.category_id,accountId:row.account_id!,day:row.spent_on,passive:false,sourceChat:row.source_chat,sourceMessage:row.source_message}:null;
-  }
-  const row=await ctx.env.DB.prepare('SELECT * FROM income WHERE user_id=? AND id=?').bind(ctx.userId,id).first<{amount_minor:number;source:string;account_id:number;received_on:string;passive:number;source_chat:number|null;source_message:number|null}>();
-  return row?{id,kind,amount:row.amount_minor,label:row.source,categoryId:null,accountId:row.account_id,day:row.received_on,passive:Boolean(row.passive),sourceChat:row.source_chat,sourceMessage:row.source_message}:null;
-}
-guidedEntry.callbackQuery(/^correct:(expense|income):(\d+):(amount|account|undo|review)$/,async ctx=>{
+async function record(ctx:AppContext,kind:EntryKind,id:number){return ledgerEntry(ctx.db,ctx.env.DB,ctx.userId,kind,id);}
+guidedEntry.callbackQuery(/^correct:(expense|income|saving|withdrawal):(\d+):(amount|account|undo|review)$/,async ctx=>{
   await ctx.answerCallbackQuery();
-  const kind=ctx.match[1] as 'expense'|'income',row=await record(ctx,kind,Number(ctx.match[2]));
+  const kind=ctx.match[1] as EntryKind,row=await record(ctx,kind,Number(ctx.match[2]));
   if(!row){await ctx.reply('This entry is no longer available.',{reply_markup:new InlineKeyboard().text('Add an entry','entry:new')});return;}
-  if(row.sourceChat!=null&&kind==='income'){
-    const kb=new InlineKeyboard();
-    if(String(row.sourceChat).startsWith('-100'))kb.url('Open source table',`https://t.me/c/${String(row.sourceChat).slice(4)}/${row.sourceMessage}`);
-    await ctx.reply('This entry belongs to a channel table. Edit or remove its row in the source message so the diary and balances stay in sync.',{reply_markup:kb});return;
-  }
-  const expected={amountMinor:row.amount,day:row.day,label:row.label,accountId:row.accountId,passive:row.passive,categoryId:row.categoryId};
+  const expected={amountMinor:row.amount,day:row.day,label:row.label,accountId:row.accountId,passive:row.passive,categoryId:row.categoryId,goalId:row.goalId};
   if(ctx.match[3]==='undo'){
     const request=crypto.randomUUID();
     await ctx.db.setState(ctx.userId,'guided_undo',{request,kind,id:row.id,expected,channel:row.sourceChat!=null});
     await ctx.reply(`Undo ${minorMoney(row.amount,ctx.sign)} ${row.label||titles[kind]}?`,{reply_markup:new InlineKeyboard().text('Undo entry',`undoentry:${request.replaceAll('-','')}`).text('Keep it',`keepentry:${request.replaceAll('-','')}`)});return;
   }
-  await show(ctx,{request:crypto.randomUUID(),kind,step:ctx.match[3] as Step,amount:row.amount,label:row.label||titles[kind],categoryId:row.categoryId,accountId:row.accountId,day:row.day,edit:{id:row.id,kind,expected,channel:row.sourceChat!=null}});
+  await show(ctx,{request:crypto.randomUUID(),kind,step:ctx.match[3] as Step,amount:row.amount,goalId:row.goalId,label:row.label||titles[kind],categoryId:row.categoryId,accountId:row.accountId,day:row.day,edit:{id:row.id,kind,expected,channel:row.sourceChat!=null}});
 });
-guidedEntry.callbackQuery('entry:check',async ctx=>{await ctx.answerCallbackQuery();await ctx.reply('Use /last for expenses, /incomes for income, /goal for savings, or /syncstatus for channel updates. Reopen the entry from the latest report to correct it.');});
+export async function sendSavingsEntries(ctx:AppContext){
+  const rows=(await ctx.db.finance.savingsEntries(ctx.userId,'0001-01-01',todayIn(ctx.tz))).slice(0,15),kb=new InlineKeyboard();
+  for(const r of rows)kb.text(`${r.amount_minor>0?'Saved':'Withdrew'} ${r.goal_name} · ${minorMoney(Math.abs(r.amount_minor),ctx.sign)}`,`correct:${r.amount_minor>0?'saving':'withdrawal'}:${r.id}:review`).row();
+  kb.text('Add savings','new:saving').text('Withdraw','new:withdrawal');
+  await ctx.api.sendRichMessage(ctx.chat!.id,{blocks:[{type:'heading',size:2,text:'Savings activity'},...(rows.length?[reportTable(['Date','Goal','Amount'],rows.map(r=>[r.saved_on,r.goal_name,minorMoney(r.amount_minor,ctx.sign)]))]:[{type:'paragraph' as const,text:'No savings transfers yet.'}]),{type:'footer',text:'Choose an entry to correct or undo it. Channel entries update the source table.'}]},{reply_markup:kb});
+}
+guidedEntry.command('savings',sendSavingsEntries);
+guidedEntry.callbackQuery('savings:recent',async ctx=>{await ctx.answerCallbackQuery();await sendSavingsEntries(ctx);});
+guidedEntry.callbackQuery('entry:check',async ctx=>{await ctx.answerCallbackQuery();await ctx.reply('Use /last for expenses, /incomes for income, /savings for savings activity, /transfers for account transfers, or /syncstatus for channel updates. Reopen the entry from the latest report to correct it.');});
 guidedEntry.callbackQuery(/^keepentry:([a-f0-9]{32})$/,async ctx=>{
   await ctx.answerCallbackQuery();const state=await ctx.db.getState(ctx.userId);
   if(state?.state!=='guided_undo'||String(state.payload.request).replaceAll('-','')!==ctx.match[1]){await ctx.reply('This confirmation expired. Your current draft is unchanged.');return;}
@@ -196,7 +210,7 @@ guidedEntry.callbackQuery(/^undoentry:([a-f0-9]{32})$/,async ctx=>{
   await ctx.answerCallbackQuery();const state=await ctx.db.getState(ctx.userId);
   if(state?.state!=='guided_undo'||String(state.payload.request).replaceAll('-','')!==ctx.match[1]){await ctx.reply('This confirmation expired. Open the entry again.');return;}
   try{
-    if(state.payload.channel)await correctChannelExpense(ctx,Number(state.payload.id),state.payload.expected as Record<string,unknown>,null,String(state.payload.request));
+    if(state.payload.channel)await correctChannelEntry(ctx,state.payload.kind as EntryKind,Number(state.payload.id),state.payload.expected as Record<string,unknown>,null,String(state.payload.request));
     else await dashboardAction(ctx.db,ctx.env.DB,ctx.userId,ctx.tz,{...state.payload,requestId:state.payload.request,action:'delete'});
     await ctx.db.clearState(ctx.userId);await ctx.reply('Entry undone. Balances updated.',{reply_markup:new InlineKeyboard().text('Add entry','entry:new')});
   }catch(error){await ctx.reply(entryRecovery(error).message,{reply_markup:new InlineKeyboard().text('Keep entry',`keepentry:${String(state.payload.request).replaceAll('-','')}`).text('Record income','new:income')});}
@@ -206,6 +220,7 @@ guidedEntry.callbackQuery(/^draft:([a-f0-9]{32}):(.+)$/,async ctx=>{
   await ctx.answerCallbackQuery();const d=await active(ctx);
   if(!d||token(d)!==ctx.match[1]){await ctx.reply('This draft expired or was replaced. Start a new entry.',{reply_markup:new InlineKeyboard().text('New entry','entry:new')});return;}
   const action=ctx.match[2]!;
+  if(!['save','save-anyway'].includes(action))d.duplicateKey=undefined;
   if(d.blocked&&action!=='cancel'){await show(ctx,d,'Check recent activity before starting a new attempt.');return;}
   if(action==='back'){
     const previous:Partial<Record<Step,Step>>={account:'label',amount:'account',category:'amount',category_name:'category',day:'review'};
@@ -242,9 +257,16 @@ guidedEntry.callbackQuery(/^draft:([a-f0-9]{32}):(.+)$/,async ctx=>{
   else if(action.startsWith('account:')){const id=Number(action.slice(8));const a=await ctx.db.accounts.get(ctx.userId,id);if(!a||a.archived)return show(ctx,d,'Choose an active account.');d.accountId=id;}
   else if(action.startsWith('goal:')){const g=(await ctx.db.finance.goals(ctx.userId)).find(g=>g.id===Number(action.slice(5)));if(!g)return show(ctx,d,'Choose an existing goal.');d.goalId=g.id;d.label=g.name;}
   else if(action.startsWith('date:'))d.day=action.endsWith('yesterday')?addDays(todayIn(ctx.tz),-1):todayIn(ctx.tz);
-  else if(action==='save'){
+  else if(action==='save'||action==='save-anyway'){
     if(d.step!=='review'){await show(ctx,d,'Finish this step before saving.');return;}
     if(!d.amount||!d.label||!d.accountId||d.kind==='expense'&&d.categoryId===undefined)return advance(ctx,d);
+    if(!d.edit){
+      const matches=await duplicateEntries(ctx.env.DB,ctx.userId,{kind:d.kind,amount:d.amount,label:d.label,day:d.day,goalId:d.goalId});
+      if(matches.length){
+        const signature=duplicateSignature(d,matches.map(r=>r.id));
+        if(action!=='save-anyway'||d.duplicateKey!==signature){d.duplicateKey=signature;await show(ctx,d,`Possible duplicate: ${matches.length} matching ${d.kind} ${matches.length===1?'entry already exists':'entries already exist'} on ${d.day}. Choose Save anyway only if this is another transaction.`);return;}
+      }
+    }
     let correctedChannelId:number|null=null;
     try{
       if(d.channel&&!d.edit){
@@ -252,14 +274,14 @@ guidedEntry.callbackQuery(/^draft:([a-f0-9]{32}):(.+)$/,async ctx=>{
         if(!saved){await show(ctx,d,'Your draft is kept. Follow the guidance above before retrying.');return;}
         return;
       }
-      if(d.edit?.channel)correctedChannelId=await correctChannelExpense(ctx,d.edit.id,d.edit.expected,{amount:d.amount,accountId:d.accountId},d.request);
+      if(d.edit?.channel)correctedChannelId=await correctChannelEntry(ctx,d.edit.kind,d.edit.id,d.edit.expected,{amount:d.amount,accountId:d.accountId},d.request);
       else await dashboardAction(ctx.db,ctx.env.DB,ctx.userId,ctx.tz,{action:d.edit?'edit':d.kind==='expense'?'add-expense':d.kind==='income'?'add-income':d.kind==='saving'?'save':'withdraw',
-        requestId:d.request,amount:String(d.amount/100),label:d.labelEdited?d.label:d.edit?.expected.label??d.label,day:d.day,accountId:d.accountId,categoryId:d.categoryId??null,id:d.edit?.id??d.goalId,kind:d.edit?.kind,expected:d.edit?.expected,passive:d.edit?.expected.passive??false});
+        requestId:d.request,amount:String(d.amount/100),label:d.labelEdited?d.label:d.edit?.expected.label??d.label,day:d.day,accountId:d.accountId,categoryId:d.categoryId??null,goalId:d.goalId,id:d.edit?.id??d.goalId,kind:d.edit?.kind,expected:d.edit?.expected,passive:d.edit?.expected.passive??d.passive??false});
     }catch(error){const recovery=entryRecovery(error);d.step='review';d.blocked=!recovery.retrySafe;await show(ctx,d,recovery.message);return;}
     await ctx.db.clearState(ctx.userId);
     let kb=new InlineKeyboard().text('Add another','entry:new');
-    if(d.kind==='expense'||d.kind==='income'){
-      const table=d.kind==='expense'?'transactions':'income',column=d.kind==='expense'?'dashboard_event':'event_key';
+    {
+      const table=d.kind==='expense'?'transactions':d.kind==='income'?'income':'savings',column=d.kind==='expense'?'dashboard_event':'event_key';
       const id=correctedChannelId??(d.edit?.channel?null:d.edit?.id)??await ctx.env.DB.prepare(`SELECT id FROM ${table} WHERE user_id=? AND ${column}=?`).bind(ctx.userId,`dashboard:${ctx.userId}:${d.request}`).first<number>('id');
       if(id)kb=correctionKeyboard(d.kind,id);
     }

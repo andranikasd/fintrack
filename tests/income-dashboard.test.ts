@@ -97,7 +97,11 @@ describe('dashboard data and actions',()=>{
     await expect(dashboardAction(db,d1,2,'Asia/Yerevan',edit)).rejects.toThrow();
   });
   it('embeds hostile labels safely and produces syntactically valid offline HTML',async()=>{
-    const {db,day,from}=await fixture();await db.income.add(1,'</script><script>alert(1)</script>',100,day,'xss');
+    const {db,day,from}=await fixture();
+    await db.accounts.create(1,'Cash',0,from,'cash');
+    const cash=(await db.accounts.list(1,day)).find(a=>a.name==='Cash')!;
+    await db.transfers.add(1,1,cash.id,100077,day,'ATM cash withdrawal','transfer',day);
+    await db.income.add(1,'</script><script>alert(1)</script>',100,day,'xss',1);
     const data=await dashboardData(db,1,'Asia/Yerevan',from,day),html=renderDashboard(data,false);
     expect(html).not.toContain('</script><script>alert(1)</script>');
     const bootstrap=html.match(/id="bootstrap">([\s\S]*?)<\/script>/)![1]!;

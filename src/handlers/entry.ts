@@ -1,4 +1,4 @@
-import { correctionKeyboard } from './guided-entry';
+import { correctionKeyboard, offerDuplicateReview } from './guided-entry';
 import { reportTable } from '../lib/rich-report';
 import { promptCategory } from './category-review';
 import { appendChannelExpense, validateExpenseRow } from '../lib/channel-table';
@@ -70,6 +70,7 @@ export async function addToChannel(ctx: AppContext, parsed: {amount:number; rest
   const suffix = ` @ ${account.name}`;
   validateExpenseRow(item+suffix,parsed.amount,ctx.tz);
   const event=parsed.event ?? `add:${ctx.userId}:${ctx.message!.message_id}`;
+  if(!event.startsWith('guided:')&&await offerDuplicateReview(ctx,{kind:'expense',amount:parsed.amount*100,label:item,day:parsed.spentOn,accountId,categoryId:matched.category?.id??null,channel:true},event))return false;
   // Recover the channel lock after a crashed request; never replay that request.
   await ctx.env.DB.prepare("UPDATE channel_add_requests SET status='uncertain' WHERE chat_id=? AND status='pending' AND started_at<unixepoch()-600").bind(linked.chat_id).run();
   let claimed;
@@ -237,6 +238,7 @@ entry.on('message:text', async (ctx, next) => {
   }
   const categories = await ctx.db.categories(ctx.userId);
   const { category, note } = matchCategory(accountHint.label, categories);
+  if(await offerDuplicateReview(ctx,{kind:'expense',amount:parsed.amount*100,label:note,day:parsed.spentOn,accountId:account.id,categoryId:category?.id??null},`message:${ctx.chat.id}:${ctx.message.message_id}`))return;
   const txId = await ctx.db.addTransaction(
     ctx.userId,
     category?.id ?? null,
@@ -256,6 +258,7 @@ entry.callbackQuery(/^entryaccount:(\d+):([a-f0-9]{24})$/, async ctx => {
   if(!account||account.archived){await ctx.answerCallbackQuery({text:'Account unavailable.',show_alert:true});return;}
   await ctx.answerCallbackQuery();
   const categories=await ctx.db.categories(ctx.userId),match=matchCategory(String(state.payload.rest).replace(/\s+@\s+.+$/,''),categories);
+  if(await offerDuplicateReview(ctx,{kind:'expense',amount:Number(state.payload.amount)*100,label:match.note,day:String(state.payload.spentOn),accountId:account.id,categoryId:match.category?.id??null},String(state.payload.event)))return;
   const txId=await ctx.db.addTransaction(ctx.userId,match.category?.id??null,Number(state.payload.amount),match.note,String(state.payload.spentOn),account.id,String(state.payload.event));
   await ctx.db.clearState(ctx.userId);
   await confirm(ctx,txId,match.category===null);
@@ -333,7 +336,7 @@ export async function sendRecent(ctx:AppContext,limit=10):Promise<void>{
     kb.text(`Edit ${tx.note||tx.category_name||'expense'} · ${money(tx.amount,ctx.sign)}`.slice(0,60),`correct:expense:${tx.id}:review`);
     if ((i + 1) % 2 === 0) kb.row();
   });
-  kb.row().text('Income receipts','income:recent').text('Add expense','new:expense');
+  kb.row().text('Income receipts','income:recent').text('Savings activity','savings:recent').row().text('Transfers','transfers:list').text('Add expense','new:expense');
   await ctx.api.sendRichMessage(ctx.chat!.id,{blocks:[
     {type:'heading',size:2,text:`Last ${rows.length} expenses`},
     reportTable(['Date','Item / category','Amount'],rows.map(tx=>[

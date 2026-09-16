@@ -17,7 +17,7 @@ export function validDate(date: string): boolean {
   return Number.isFinite(d.getTime()) && d.toISOString().slice(0, 10) === date;
 }
 export interface Goal {
-  id: number; user_id: number; name: string; target_minor: number; opening_minor: number;
+  version?:number; id: number; user_id: number; name: string; target_minor: number; opening_minor: number;
   deadline: string | null; daily_minor: number | null; cap_minor: number | null; saved_minor: number;
 }
 export function goalPlan(goal: Goal, today: string, allowance = Infinity) {

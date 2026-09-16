@@ -25,10 +25,11 @@ describe('detailed financial reports', () => {
       i===3?'A long receipt note with Armenian text սուրճ and complete purchase details that must remain readable across multiple wrapped lines without being cut off.':'Purchase '+i,
       '2026-09-'+String(i).padStart(2,'0'),1);
     await db.income.add(1,'Interest',25077,'2026-09-12','interest',2,true);
+    await db.transfers.add(1,1,2,100077,'2026-09-13','ATM cash withdrawal','transfer','2026-09-15');
     await db.setBudget(1,0,150000); await db.setBudget(1,categories[0]!.id,10000);
     const data=await collectReport(db,1,'2026-09-01','2026-09-30','September 2026','2026-09','AMD','2026-09-15');
     expect(data.finance?.savings.reduce((sum,r)=>sum+r.amount_minor,0)).toBe(450000);
-    expect(data.finance?.accounts.find(a=>a.id===2)?.balance_minor).toBe(250231);
+    expect(data.finance?.accounts.find(a=>a.id===2)?.balance_minor).toBe(350308);
     const partial=await collectReport(db,1,'2026-09-09','2026-09-15','Last week','2026-09','AMD','2026-09-15');
     expect(partial.budgetOverall).toBe(0);expect(partial.categoryBudgets.size).toBe(0);
     const bytes=await buildReport(data);

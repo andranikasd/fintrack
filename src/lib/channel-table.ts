@@ -1,5 +1,5 @@
 import type { InputRichMessage, MessageEntity, RichText } from 'grammy/types';
-import { parseDailyPost, richText } from './daily-post';
+import { parseDailyPost, richText, type PostRow } from './daily-post';
 
 type SourcePost = { date:number; text?:string; caption?:string; entities?:MessageEntity[]; caption_entities?:MessageEntity[]; rich_message?:unknown };
 type Block = Record<string, any>;
@@ -98,16 +98,16 @@ export function appendChannelExpense(source:SourcePost,tz:string,label:string,am
 }
 
 /** Change one expense by its position in the captured source, retaining surrounding formatting. */
-export function changeChannelExpense(source:SourcePost,tz:string,expenseIndex:number,next:{label:string;amount:number}|null):ReturnType<typeof appendChannelExpense> {
+export function changeChannelEntry(source:SourcePost,tz:string,kind:PostRow['kind'],expenseIndex:number,next:{label:string;amount:number}|null):ReturnType<typeof appendChannelExpense> {
   if(next && /[|\r\n]/.test(next.label))throw new Error('Use an item name without pipe characters or line breaks.');
-  if(next)validateExpenseRow(next.label,next.amount,tz);
+  if(next){const probe=parseDailyPost({date:source.date,text:`Item | price\n${next.label} | ${next.amount}`},tz).rows;if(probe.length!==1||probe[0]!.kind!==kind)throw new Error('The source row type changed. Reopen it.');}
   const parsed=parseDailyPost(source,tz),expenses=parsed.rows.filter(r=>r.kind==='expense');
-  const old=expenses[expenseIndex];if(!old)throw new Error('This source row changed. Reopen the latest entry.');
-  const total=expenses.reduce((sum,r)=>sum+r.amountMinor/100,0)-old.amountMinor/100+(next?.amount??0);
+  const old=parsed.rows.filter(r=>r.kind===kind)[expenseIndex];if(!old)throw new Error('This source row changed. Reopen the latest entry.');
+  const total=expenses.reduce((sum,r)=>sum+r.amountMinor/100,0)+(kind==='expense'?-old.amountMinor/100+(next?.amount??0):0);
   let index=0,changed=false;
   const isTarget=(line:string)=>{
     try {const row=parseDailyPost({date:source.date,text:'Item | price\n'+line},tz).rows[0];
-      if(!row||row.kind!=='expense')return false;return index++===expenseIndex;
+      if(!row||row.kind!==kind)return false;return index++===expenseIndex;
     }catch{return false;}
   };
   const replacement=(line:string)=>{
@@ -165,3 +165,5 @@ export function changeChannelExpense(source:SourcePost,tz:string,expenseIndex:nu
   parseDailyPost({text,date:source.date},tz);
   return {text,entities,caption:source.text===undefined};
 }
+
+export function changeChannelExpense(source:SourcePost,tz:string,index:number,next:{label:string;amount:number}|null){return changeChannelEntry(source,tz,'expense',index,next);}

@@ -6,10 +6,8 @@ export interface Account {
 export class AccountsDb {
   constructor(private readonly db:Database) {}
   async list(user:number,today:string):Promise<Account[]> {
-    return (await this.db.prepare(`SELECT a.*,
-      a.opening_minor + COALESCE((SELECT SUM(i.amount_minor) FROM income i WHERE i.user_id=a.user_id AND i.account_id=a.id AND i.received_on BETWEEN a.opening_on AND ?),0)
-      - COALESCE((SELECT SUM(t.amount)*100 FROM transactions t WHERE t.user_id=a.user_id AND t.account_id=a.id AND t.spent_on BETWEEN a.opening_on AND ?),0) - COALESCE((SELECT SUM(s.amount_minor) FROM savings s WHERE s.user_id=a.user_id AND s.account_id=a.id AND s.saved_on BETWEEN a.opening_on AND ?),0) AS balance_minor
-      FROM accounts a WHERE a.user_id=? ORDER BY a.archived,lower(a.name)`).bind(today,today,today,user).all<Account>()).results;
+    return (await this.db.prepare(`SELECT a.*,COALESCE((SELECT balance_minor FROM account_daily_balances b WHERE b.account_id=a.id AND b.day<=? ORDER BY b.day DESC LIMIT 1),a.opening_minor) AS balance_minor
+      FROM accounts a WHERE a.user_id=? ORDER BY a.archived,lower(a.name)`).bind(today,user).all<Account>()).results;
   }
   /** An omitted account is unambiguous only when exactly one active account exists. */
   async resolve(user:number,account:number|null=null):Promise<number> {

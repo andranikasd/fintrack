@@ -1,6 +1,7 @@
 import type { Account } from '../accounts-db';
 import type { Income } from '../income-db';
 import type { Goal } from '../lib/savings';
+import type { Transfer } from '../transfers-db';
 import fontkit from '@pdf-lib/fontkit';
 import { PDFDocument, StandardFonts, type PDFFont, type PDFPage } from 'pdf-lib';
 import { daysInMonth, monthLabel, prettyDate } from '../lib/dates';
@@ -28,6 +29,7 @@ export interface ReportData {
     accounts: Account[];
     openingAccounts: Account[];
     goals: Goal[];
+    transfers?: Transfer[];
   };
   periodLabel: string;
   from: string;
@@ -590,6 +592,7 @@ function drawFinancialSummary(ctx: Ctx): void {
   text('Reading this report',12,true);
   for(const line of ['Savings are transfers, not spending. Opening balances are not income.',
     'Cash flow is income minus spending and net savings transfers.',
+    'Account transfers change balances, not income, spending or net cash flow.',
     "Account balances include activity from each account's opening date.",
     'Budget comparisons use your current settings, not historical budget versions.',
     'Dates without entries are not confirmed no-spend days.',
@@ -599,15 +602,20 @@ function drawFinancialSummary(ctx: Ctx): void {
     const incoming=f.incomes.filter(r=>r.account_id===a.id&&r.received_on>=a.opening_on).reduce((s,r)=>s+r.amount_minor,0);
     const spending=d.transactions.filter(r=>r.account_id===a.id&&r.spent_on>=a.opening_on).reduce((s,r)=>s+r.amount*100,0);
     const saved=f.savings.filter(r=>r.account_id===a.id&&r.saved_on>=a.opening_on).reduce((s,r)=>s+r.amount_minor,0);
+    const transferred=(f.transfers??[]).reduce((sum,r)=>sum+(r.to_account_id===a.id?r.amount_minor:0)-(r.from_account_id===a.id?r.amount_minor:0),0);
     return [a.name+(a.archived?' (archived)':'')+'\nOpening date: '+a.opening_on,
       amountOnly(a.opening_on>=d.from?a.opening_minor:opening?.balance_minor??a.opening_minor),
-      amountOnly(incoming),amountOnly(spending),amountOnly(saved),amountOnly(a.balance_minor)];
+      amountOnly(incoming),amountOnly(spending),amountOnly(saved),amountOnly(transferred),amountOnly(a.balance_minor)];
   });
   let flow=detailTable(ctx,`Account reconciliation (${d.currency})`,[
-    {title:'Account / opening date',w:125,align:'left'},{title:'Start / opening',w:78,align:'right'},
-    {title:'Income',w:78,align:'right'},{title:'Spent',w:78,align:'right'},
-    {title:'Net saved',w:78,align:'right'},{title:'End balance',w:78,align:'right'},
+    {title:'Account / opening date',w:113,align:'left'},{title:'Start / opening',w:67,align:'right'},
+    {title:'Income',w:67,align:'right'},{title:'Spent',w:67,align:'right'},
+    {title:'Net saved',w:67,align:'right'},{title:'Net moved',w:67,align:'right'},{title:'End balance',w:67,align:'right'},
   ],accountRows);
+  if(f.transfers?.length)flow=detailTable(ctx,'Account transfers / no income or spending',[
+    {title:'Date',w:80,align:'left'},{title:'From / to',w:180,align:'left'},
+    {title:'Note',w:150,align:'left'},{title:'Amount',w:105,align:'right'},
+  ],f.transfers.map(r=>[r.transferred_on,r.from_name+' / '+r.to_name,r.note,exactMoney(ctx,r.amount_minor)]),flow);
   const sourceTotals=new Map<string,number>();
   for(const r of f.incomes) sourceTotals.set(r.source,(sourceTotals.get(r.source)??0)+r.amount_minor);
   flow=detailTable(ctx,'Income by source',[{title:'Source',w:355,align:'left'},{title:'Received',w:160,align:'right'}],

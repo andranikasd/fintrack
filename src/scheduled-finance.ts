@@ -1,3 +1,4 @@
+import { billKeyboard } from './handlers/bills';
 import { richDailyReport } from './lib/rich-report';
 import { uncategorizedKeyboard } from './handlers/category-review';
 import type { Api } from 'grammy';
@@ -21,6 +22,9 @@ export async function runFinanceSchedule(db:Db,api:Api,user:{id:number;tz:string
     try { await work(); await db.finance.finishDelivery(user.id,today,kind,true); }
     catch(err) { await db.finance.finishDelivery(user.id,today,kind,false); console.error('finance delivery failed',kind,user.id,err); }
   };
+  for(const occurrence of await db.bills.due(user.id,today,time))await deliver(`bill:${occurrence.id}`,async()=>{
+    await api.sendMessage(user.id,`${occurrence.label} · due ${occurrence.due_on}\n${minorMoney(occurrence.amount_minor,sign)}\nTap Paid today only after paying. If you already recorded it today, a matching entry can be linked.`,{reply_markup:billKeyboard(occurrence.id)});
+  });
   if(prefs.reminder_time&&time>=prefs.reminder_time) {
     const status=await financialStatus(db,user.id,today);
     for(const plan of status.plans) if(plan.suggested>0) await deliver(`goal:${plan.goal.id}`,async()=> {

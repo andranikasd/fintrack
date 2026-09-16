@@ -232,7 +232,13 @@ spending budget stays unchanged when income is recorded.
 Use `/add`, `/income`, `/save` or `/withdraw` without arguments for guided entry.
 Choose a recent item/source or type a name, choose an account, use the number
 keypad or type the amount, and review before saving. `/new` opens the entry menu.
-Errors retain the draft. Corrections use the buttons on receipts or recent entries.
+Errors retain the draft. Opening reports or another form pauses guided drafts;
+`/resume` restores them. Corrections use the buttons on receipts or recent entries,
+including `/savings` for deposits and withdrawals. Channel corrections preserve
+the source table. `/account` and `/goal` provide guided setup and editing.
+`/bill` sets up weekly or monthly payment reminders; `/bills` edits or pauses them.
+Reminders never create expenses until payment is confirmed. Existing matching
+expenses can be linked to a reminder to avoid recording them twice.
 If a channel write has an uncertain result, inspect `/syncstatus` and the source
 before starting another request; the bot does not blindly replay that write.
 
@@ -336,8 +342,9 @@ causes a sync error and preserves the last valid version of that post. Correct
 its account name or create the account, then edit the post to retry. Edit source
 channel rows to change their account assignment, amount or date. Manual entries
 can be corrected from their Telegram receipts or recent-entry buttons. Savings
-deposits debit the selected account; withdrawals credit it. There are no direct
-account-to-account transfers.
+deposits debit the selected account; withdrawals credit it. `/transfer` records
+account-to-account movements without counting them as income or spending.
+`/transfers` lists them and provides confirmed undo with balance protection.
 
 Standalone HTML reports include the views and local navigation but cannot save
 changes. Calendar drill-down is limited to the snapshot's records. Monthly totals
@@ -470,3 +477,15 @@ in Receipts & notes under the original key; they are not silently reassigned.
 The dashboard lists the latest 500 attachments; older files remain stored.
 Removing an attachment permanently deletes that attachment and note. Restore a
 backup if recovery is needed. No OCR or automatic transaction entry is performed.
+
+### Guided finance migration (0009)
+
+Deploy migration 0009 and its application code together during a coordinated
+restart. The normal Node startup takes a pre-migration snapshot and upgrades
+atomically. Existing ledger entries and opening balances remain unchanged.
+The migration adds draft storage, recurring bills, account transfers and goal
+balance guards. Older application versions do not include account transfers in
+balance queries, so do not roll back the application alone after recording them.
+Prefer a forward fix. A snapshot restore discards subsequent activity and requires
+explicit reconciliation before the bot resumes. See the backup verification and
+restore steps above; verification includes the new tables.

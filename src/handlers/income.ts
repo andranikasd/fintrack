@@ -1,4 +1,4 @@
-import { correctionKeyboard } from './guided-entry';
+import { correctionKeyboard, offerDuplicateReview } from './guided-entry';
 import { reportTable } from '../lib/rich-report';
 import { dashboardAction } from '../web/actions';
 import { accountEntry } from '../lib/account-entry';
@@ -18,14 +18,15 @@ income.command('account', async ctx=>{
 });
 export async function sendAccounts(ctx:AppContext):Promise<void>{
   const rows=await ctx.db.accounts.list(ctx.userId,todayIn(ctx.tz));
-  if(!rows.length){await ctx.reply('No accounts yet. /account Card 100000');return;}
+  if(!rows.length){await ctx.reply('Create your first account to record activity.',{reply_markup:new InlineKeyboard().text('New account','setup:account:new')});return;}
+  const keyboard=new InlineKeyboard();for(const a of rows)keyboard.text(`Edit ${a.name}`,`setup:account:${a.id}`).row();keyboard.text('New account','setup:account:new').text('Transfers','transfers:list');
   await ctx.api.sendRichMessage(ctx.chat!.id,{blocks:[
     {type:'heading',size:2,text:'Your accounts'},
     reportTable(['Account','Balance'],rows.map(a=>[a.name+(a.archived?' (archived)':''),minorMoney(a.balance_minor,ctx.sign)])),
     {type:'paragraph',text:{type:'bold',text:'Total: '+minorMoney(rows.reduce((sum,a)=>sum+a.balance_minor,0),ctx.sign)}},
-    {type:'footer',text:'Balances include income, spending and savings transfers from the opening date. Use /add or /income to record activity.'},
+    {type:'footer',text:'Balances include income, spending, savings and account transfers from the opening date. Use /add or /income to record activity.'},
     ...(rows.some(a=>a.balance_minor<0)?[{type:'paragraph' as const,text:'⚠ Historical negative balances need correction. Use /last or /incomes to review entries, and correct channel rows in their source table.'}]:[]),
-  ]});
+  ]},{reply_markup:keyboard});
 }
 income.command('accounts',sendAccounts);
 income.command(['income','incomes'], async ctx => {
@@ -42,6 +43,7 @@ income.command(['income','incomes'], async ctx => {
     const entry=accountEntry(match[1]!.trim());
     const account=entry.accountName?await ctx.db.accounts.named(ctx.userId,entry.accountName):null;
     if(!account) { await ctx.reply('Choose the receiving account: /income Salary @ Card 450000. Create an account with /account Card 0. For passive income: /income Interest @ Savings [passive] 1500'); return; }
+    if(await offerDuplicateReview(ctx,{kind:'income',amount,label:entry.label,day,accountId:account.id,passive:entry.passive},`message:${ctx.chat.id}:${ctx.message!.message_id}`))return;
     const added = await ctx.db.income.add(ctx.userId,entry.label,amount,day,`message:${ctx.chat.id}:${ctx.message!.message_id}`,account.id,entry.passive);
     const savedId=await ctx.env.DB.prepare('SELECT id FROM income WHERE user_id=? AND event_key=?').bind(ctx.userId,`message:${ctx.chat.id}:${ctx.message!.message_id}`).first<number>('id');
     await ctx.reply(added ? `Income recorded: ${minorMoney(amount,ctx.sign)} from ${match[1]} on ${day}.` : 'This income was already recorded.',{reply_markup:savedId?correctionKeyboard('income',savedId):undefined});
@@ -55,7 +57,7 @@ export async function sendIncomeSummary(ctx:AppContext):Promise<void>{
     ctx.db.income.total(ctx.userId,from,to), ctx.db.income.bySource(ctx.userId,from,to), ctx.db.income.list(ctx.userId,from,to,10),
   ]);
   const keyboard = new InlineKeyboard();
-  for (const row of rows.filter(r=>r.source_chat===null)) keyboard.text(`Edit ${row.source.slice(0,30)} ${minorMoney(row.amount_minor,ctx.sign)}`,`correct:income:${row.id}:review`).row();
+  for (const row of rows) keyboard.text(`Edit ${row.source.slice(0,30)} ${minorMoney(row.amount_minor,ctx.sign)}`,`correct:income:${row.id}:review`).row();
   keyboard.row().text('Recent expenses','expense:recent').text('Add income','new:income');
   await ctx.api.sendRichMessage(ctx.chat!.id,{blocks:[
     {type:'heading',size:2,text:`Income · ${monthOf(today)}`},

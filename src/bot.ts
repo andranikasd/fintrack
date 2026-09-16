@@ -1,3 +1,7 @@
+import { financeForms } from './handlers/finance-forms';
+import { drafts } from './handlers/drafts';
+import { bills } from './handlers/bills';
+import { transfers } from './handlers/transfers';
 import { guidedEntry } from './handlers/guided-entry';
 import { cleanup } from './handlers/cleanup';
 import { dashboard } from './handlers/dashboard';
@@ -22,6 +26,13 @@ import { stats } from './handlers/stats';
 import type { Env } from './types';
 
 export const COMMANDS = [
+  {command:'resume',description:'Continue an unfinished entry or setup'},
+  {command:'drafts',description:'View and discard unfinished drafts'},
+  {command:'transfer',description:'Record a transfer between your accounts'},
+  {command:'transfers',description:'Review or undo account transfers'},
+  {command:'bill',description:'Set up a recurring payment reminder'},
+  {command:'bills',description:'Review and edit recurring bills'},
+  {command:'savings',description:'Review and correct savings activity'},
   { command: 'add', description: 'Record an expense step by step' },
   { command: 'new', description: 'Guided expense, income or savings entry' },
   { command: 'incomes', description: 'View income sources and recent receipts' },
@@ -100,17 +111,25 @@ export function createBot(env: Env, exec: BackgroundWork): Bot<AppContext> {
     }
   });
 
-  // A command or a menu tap abandons any pending question, so the answer to
-  // "send me the new name" cannot be picked up half an hour later.
-  bot.use(async (ctx, next) => {
-    const text = ctx.message?.text;
-    if (text && (text.startsWith('/') || /^(📊|📈|🗂|🎯|📄|↩️|➕|💰|🧾|🏦)/u.test(text))) {
+  // Commands and navigation release the text-answer slot but retain unfinished forms.
+  bot.use(async(ctx,next)=>{
+    const text=ctx.message?.text,callback=ctx.callbackQuery?.data;
+    const menu=['➕ Expense','💰 Income','➕ Add entry','🧾 Recent','🏦 Accounts','📄 Export','🗂 Categories','🎯 Budget','📊 Month','📈 Stats','↩️ Undo'];
+    const navigating=Boolean(text&&(text.startsWith('/')||menu.includes(text))||callback&&/^(new:|entry:new$|setup:|correct:|income:recent$|expense:recent$|bills:list$|transfers:list$|savings:recent$|transfer:undo:|drafts:list$|saving:(?:yes|other|skip):|cats:|cat:|bud:|review:new:)/.test(callback));
+    if(navigating){
+      const cancelled=Boolean(text&&/^\/cancel(?:@\w+)?(?:\s|$)/.test(text));
+      const paused=cancelled?null:await ctx.db.pauseDraft(ctx.userId);
       await ctx.db.clearState(ctx.userId);
+      if(paused&&!['/resume','/drafts'].includes(text??'')&&callback!=='drafts:list')await ctx.reply('Your unfinished draft is saved.',{reply_markup:new InlineKeyboard().text('Continue draft',`resume:${paused}`).text('All drafts','drafts:list')});
     }
     await next();
   });
 
   bot.use(cleanup);
+  bot.use(drafts);
+  bot.use(financeForms);
+  bot.use(bills);
+  bot.use(transfers);
   bot.use(guidedEntry);
   bot.use(channelCommands);
   bot.use(goals);

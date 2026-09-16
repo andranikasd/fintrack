@@ -1,4 +1,5 @@
 import { richDailyReport } from '../lib/rich-report';
+import { correctionKeyboard, offerDuplicateReview } from './guided-entry';
 import { accountEntry } from '../lib/account-entry';
 import { Composer, InlineKeyboard } from 'grammy';
 import type { AppContext } from '../context';
@@ -59,8 +60,8 @@ goals.command('goal', async ctx => {
   }
   const status = await financialStatus(ctx.db,ctx.userId,todayIn(ctx.tz));
   if (!status.plans.length) { await ctx.reply(USAGE); return; }
-  for (const plan of status.plans) await ctx.api.sendRichMessage(ctx.chat.id,richDailyReport(goalText(plan,ctx.sign)));
-  await ctx.reply(`Funding: ${status.prefs.funding}. Reserve: ${minorMoney(status.prefs.reserve_minor,ctx.sign)}.\nAmounts are plans, not automatic transfers. /save confirms money actually moved.\n/goalhelp for setup and preferences.`);
+  for (const plan of status.plans) await ctx.api.sendRichMessage(ctx.chat.id,richDailyReport(goalText(plan,ctx.sign)),{reply_markup:new InlineKeyboard().text('Edit plan',`setup:goal:${plan.goal.id}`).text('Savings activity','savings:recent')});
+  await ctx.reply(`Funding: ${status.prefs.funding}. Reserve: ${minorMoney(status.prefs.reserve_minor,ctx.sign)}.\nAmounts are plans, not automatic transfers. /save confirms money actually moved.\n/goalhelp for setup and preferences.`,{reply_markup:new InlineKeyboard().text('New goal','setup:goal:new').text('Continue a draft','drafts:list')});
 });
 goals.command('goalhelp',ctx=>ctx.reply(USAGE));
 for (const command of ['save','withdraw'] as const) goals.command(command,async ctx=> {
@@ -74,8 +75,10 @@ for (const command of ['save','withdraw'] as const) goals.command(command,async 
   const account=hint.accountName?await ctx.db.accounts.named(ctx.userId,hint.accountName):null;
   if(hint.accountName&&!account) { await ctx.reply('Unknown account. Use /accounts.'); return; }
   const accountId=await ctx.db.accounts.resolve(ctx.userId,account?.id??null);
+  if(await offerDuplicateReview(ctx,{kind:command==='save'?'saving':'withdrawal',amount,label:goal.name,goalId:goal.id,day,accountId},`message:${ctx.chat.id}:${ctx.message!.message_id}`))return;
   const ok = await ctx.db.finance.contribute(ctx.userId,goal.id,amount*(command==='withdraw'?-1:1),day,`message:${ctx.chat.id}:${ctx.message!.message_id}`,accountId);
-  await ctx.reply(ok ? `${command==='save'?'Saved':'Withdrawn'} ${minorMoney(amount,ctx.sign)} for ${goal.name} on ${day}. /goal shows the updated plan.` : 'Already recorded, or withdrawal exceeds the saved balance.');
+  const savedId=await ctx.env.DB.prepare('SELECT id FROM savings WHERE user_id=? AND event_key=?').bind(ctx.userId,`message:${ctx.chat.id}:${ctx.message!.message_id}`).first<number>('id');
+  await ctx.reply(ok ? `${command==='save'?'Saved':'Withdrawn'} ${minorMoney(amount,ctx.sign)} for ${goal.name} on ${day}. /goal shows the updated plan.` : 'Already recorded, or withdrawal exceeds the saved balance.',{reply_markup:savedId?correctionKeyboard(command==='save'?'saving':'withdrawal',savedId):undefined});
 });
 goals.command('funding',async ctx=> {
   const [mode,reserveRaw,...extra] = ctx.match.trim().split(/\s+/);

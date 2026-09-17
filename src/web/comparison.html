@@ -1,0 +1,81 @@
+<style>
+.scope-panel{border:1px solid var(--line);border-radius:8px;background:#fff;margin:0 0 15px;padding:14px 16px}.scope-panel>summary{cursor:pointer;font-weight:600;font-size:.86rem}.scope-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:16px}.scope-picker{min-width:0}.scope-picker .field{margin-bottom:10px}.scope-options{max-height:220px;overflow:auto;border-top:1px solid var(--line)}.scope-option{display:flex;align-items:center;gap:9px;padding:9px 0;font-size:.83rem;overflow-wrap:anywhere}.scope-option input{flex-shrink:0;accent-color:var(--teal)}.scope-option span{min-width:0}.scope-actions{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}.scope-actions button{font-size:.76rem;padding:6px 9px}.comparison-tools{display:flex;gap:18px;align-items:end;flex-wrap:wrap;margin-bottom:18px}.comparison-tools .field{margin:0;min-width:160px}.comparison-months{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.comparison-months label{display:flex;gap:7px;align-items:center;border:1px solid var(--line);border-radius:6px;padding:9px 12px;font-size:.82rem;background:#f7fafb}.comparison-months input{accent-color:var(--teal)}.comparison-table{min-width:540px;font-variant-numeric:tabular-nums}.comparison-table th:first-child{min-width:150px}.comparison-table td:not(:first-child),.comparison-table th:not(:first-child){text-align:right}.comparison-table td{vertical-align:top}.comparison-table small{display:block;font-size:.72rem;line-height:1.5;margin-top:5px;white-space:normal}.comparison-table td button{font-size:.8rem;text-align:left;padding:3px 0;border:0;background:none}.comparison-table tfoot{font-weight:650;border-top:2px solid var(--line)}.comparison-table .increase{color:#99522e}.comparison-table .decrease{color:#227a64}.comparison-table caption{text-align:left;padding:14px 0;color:var(--muted);font-size:.82rem}.comparison-empty{padding:24px;background:#f2f6f7;border-radius:8px;line-height:1.7}.record-tools{display:flex;gap:8px;flex-wrap:wrap;margin-top:7px}.record-tools button,.record-tools a{font-size:.74rem;padding:4px 7px;min-height:28px}.record-tools a{border:1px solid var(--line);border-radius:5px;text-decoration:none;display:inline-flex;align-items:center}.comparison-scope{font-size:.83rem;line-height:1.6;color:var(--muted)}
+@media(max-width:760px){#report-filters .filters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}#report-filters .filters input,#report-filters #reset{grid-column:1/-1;width:100%;min-width:0}#report-filters .filters select{width:100%;min-width:0}.scope-grid{grid-template-columns:1fr;gap:18px}.comparison-tools{gap:10px}.comparison-tools .field{flex:1;min-width:130px}.comparison-months label{padding:8px}.comparison-table{font-size:.8rem}.comparison-table th{white-space:normal}.comparison-table td{padding:12px 8px}.comparison-tools button{margin:0}.scope-options{max-height:185px}}
+@media print{#report-filters,.scope-panel,.comparison-tools,.comparison-months,.record-tools{display:none!important}.comparison-table{min-width:0;table-layout:auto;font-size:9px}.comparison-table th:first-child{min-width:0}.comparison-table th{white-space:normal;font-size:9px}.comparison-table small{font-size:8px}.comparison-table td button{display:block!important;font-size:9px;min-height:0;padding:0}.comparison-table td,.comparison-table th{padding:7px 4px}.comparison-table caption{font-size:10px}[data-view=compare].panel{break-inside:auto}}
+</style>
+<script>
+const comparisonModel=__FINTRACK_COMPARISON_MODEL__();
+let reportScope={categories:{mode:'exclude',keys:[]},items:{mode:'exclude',keys:[]},excluded:[]};
+let comparisonMonths=null,comparisonGroup='category',comparisonAlign=false;
+function scopeDescription(){
+ const parts=[];
+ for(const dimension of ['categories','items']){const choice=reportScope[dimension];if(choice.mode==='include'||choice.keys.length){const labels=new Map(data.records.map(r=>[dimension==='items'?comparisonModel.itemKey(r):comparisonModel.categoryKey(r),dimension==='items'?r.label:r.category]));parts.push((choice.mode==='include'?'Include only ':'Exclude ')+dimension+': '+(choice.keys.map(k=>labels.get(k)||'Unavailable entry').join(', ')||'none'));}}
+ if(reportScope.excluded.length)parts.push(reportScope.excluded.length+' individual records excluded');
+ return parts.join(' · ');
+}
+function resetScope(){reportScope={categories:{mode:'exclude',keys:[]},items:{mode:'exclude',keys:[]},excluded:[]};renderScope();}
+function scopeChanged(){page=0;render();}
+function renderScope(){
+ const root=$('scope-controls');root.replaceChildren();
+ const summary=$('scope-summary');summary.textContent=scopeDescription()||'Include or exclude categories, items, and individual records';
+ for(const dimension of ['categories','items']){
+  const picker=element('div',undefined,'scope-picker'),label=element('label',undefined,'field'),mode=element('select');mode.id='scope-'+dimension+'-mode';label.append(element('span',dimension==='categories'?'Categories & sources':'Item names'),mode);
+  mode.add(new Option('Exclude selected (keep everything else)','exclude'));mode.add(new Option('Include only selected','include'));mode.value=reportScope[dimension].mode;
+  mode.onchange=()=>{reportScope[dimension].mode=mode.value;scopeChanged();};
+  const search=element('input');search.type='search';search.placeholder='Find '+dimension;search.setAttribute('aria-label','Find '+dimension);search.id='scope-'+dimension+'-search';
+  const actions=element('div',undefined,'scope-actions'),list=element('div',undefined,'scope-options');list.id='scope-'+dimension+'-options';
+  const options=new Map();for(const r of data.records){const key=dimension==='items'?comparisonModel.itemKey(r):comparisonModel.categoryKey(r);if(!options.has(key))options.set(key,{key,label:(dimension==='items'?r.label:r.category)+' · '+names[r.kind]});}
+  const entries=[...options.values()].sort((a,b)=>a.label.localeCompare(b.label));
+  const visible=()=>entries.filter(r=>r.label.toLowerCase().includes(search.value.trim().toLowerCase()));
+  function draw(){list.replaceChildren();for(const r of visible()){const row=element('label',undefined,'scope-option'),check=element('input');check.type='checkbox';check.value=r.key;check.checked=reportScope[dimension].keys.includes(r.key);check.onchange=()=>{const keys=new Set(reportScope[dimension].keys);if(check.checked)keys.add(r.key);else keys.delete(r.key);reportScope[dimension].keys=[...keys];scopeChanged();};row.append(check,element('span',r.label));list.append(row)}if(!list.childNodes.length)list.append(element('p','No matching '+dimension+'.','fineprint'));}
+  for(const [title,add]of [['Select matching',true],['Clear selection',false]]){const b=element('button',title);b.type='button';b.onclick=()=>{reportScope[dimension].keys=add?[...new Set([...reportScope[dimension].keys,...visible().map(r=>r.key)])]:[];draw();scopeChanged();};actions.append(b)}
+  search.oninput=draw;picker.append(label,search,actions,list);root.append(picker);draw();
+ }
+ const excluded=$('scope-excluded');excluded.replaceChildren();if(reportScope.excluded.length){const b=element('button','Restore '+reportScope.excluded.length+' excluded records');b.onclick=()=>{reportScope.excluded=[];renderScope();scopeChanged();};excluded.append(b)}
+}
+function setupComparison(){
+ const shared=element('div');shared.id='report-filters';$('view-overview').before(shared);
+ shared.append(document.querySelector('.filters'));
+ const details=element('details',undefined,'scope-panel'),summary=element('summary');summary.id='scope-summary';const grid=element('div',undefined,'scope-grid');grid.id='scope-controls';const excluded=element('div',undefined,'scope-actions');excluded.id='scope-excluded';
+ details.append(summary,element('p','Select multiple choices. Category and item filters apply together. Exclusions change this report only; they never delete saved entries.','fineprint'),grid,excluded);shared.append(details,$('selection-summary'));
+ renderScope();
+}
+function renderComparison(){
+ const parent=$('compare-content');if(!parent)return;parent.replaceChildren();
+ const tools=element('div',undefined,'comparison-tools');
+ const groupLabel=element('label',undefined,'field'),group=element('select');group.id='comparison-group';group.add(new Option('Category','category'));group.add(new Option('Item name','item'));group.value=comparisonGroup;group.onchange=()=>{comparisonGroup=group.value;renderComparison();};groupLabel.append(element('span','Compare spending by'),group);
+ const alignLabel=element('label',undefined,'field'),align=element('select');align.id='comparison-align';align.add(new Option('All recorded days','all'));align.add(new Option('Same days in each month','same'));align.value=comparisonAlign?'same':'all';align.onchange=()=>{comparisonAlign=align.value==='same';renderComparison();};alignLabel.append(element('span','Days to compare'),align);
+ const full=element('button','Use full snapshot');full.onclick=()=>{comparisonMonths=null;range(data.from,data.to);};tools.append(groupLabel,alignLabel,full);parent.append(tools);
+ const available=comparisonModel.compare([], $('from').value,$('to').value,comparisonGroup).months;
+ const choices=element('div',undefined,'comparison-months');choices.setAttribute('aria-label','Months to compare');
+ for(const m of available){const label=element('label'),check=element('input');check.type='checkbox';check.value=m.key;check.checked=comparisonMonths===null||comparisonMonths.includes(m.key);check.onchange=()=>{const selectedMonths=new Set(comparisonMonths===null?available.map(m=>m.key):comparisonMonths);if(check.checked)selectedMonths.add(m.key);else selectedMonths.delete(m.key);comparisonMonths=[...selectedMonths];renderComparison();};label.append(check,element('span',m.key));choices.append(label)}parent.append(choices);
+ const model=comparisonModel.compare(selected,$('from').value,$('to').value,comparisonGroup,comparisonMonths,comparisonAlign);
+ const scope=element('p','Spending only. Uses the filters above. Snapshot: '+data.from+' to '+data.to+'. '+(scopeDescription()||'All categories and items included.'),'comparison-scope');parent.append(scope);
+ if(model.months.length<2)parent.append(element('p',model.months.length?'Select at least two months to compare. Use the full snapshot or export /chart 366 in Telegram for more history.':'Select a month above to show its spending.','comparison-empty'));
+ if(!model.months.length)return;
+ if(model.months.some(m=>m.from>m.to)){parent.append(element('p','These partial months have no overlapping days. Choose “All recorded days” or select different months.','comparison-empty'));return;}
+ if(!model.rows.length){parent.append(element('p','No spending matches this selection. Clear filters or choose another date range.','comparison-empty'));return;}
+ const chart=element('div');chart.id='comparison-chart';parent.append(chart);
+ const top=model.rows.slice(0,6);financialChart(chart,model.months.map(m=>m.key),top.map((r,i)=>({name:r.label,values:r.values,color:reportPalette[i%reportPalette.length]})),{title:'Monthly spending by '+comparisonGroup,bars:true});
+ parent.append(element('p',(model.rows.length>6?'Chart shows the six largest '+(comparisonGroup==='category'?'categories':'items')+'. The table includes all '+model.rows.length+'. ':'')+'Chart legend buttons hide chart series only. Use filters above to change totals.','fineprint'));
+ const wrap=element('div',undefined,'tablewrap'),table=element('table',undefined,'comparison-table');table.id='comparison-table';
+ table.append(element('caption','Amounts in AMD. Changes compare each column with the preceding selected month. Partial months are labeled. Zero means no matching records, not confirmed complete logging.'));
+ const head=element('thead'),headers=element('tr');headers.append(element('th',comparisonGroup==='category'?'Category':'Item name'));
+ for(const m of model.months){const th=element('th',m.key);th.scope='col';th.append(element('small',m.from.slice(8)+'–'+m.to.slice(8)+(m.partial?' · Partial month':'')));headers.append(th)}headers.append(element('th','Selected total'));head.append(headers);table.append(head);
+ function cells(row,values,counts){values.forEach((v,i)=>{const td=element('td',money(v));td.dataset.amount=String(v);td.append(element('small',counts[i]+' entries'));if(i){const change=comparisonModel.change(v,values[i-1]);const sign=change.amount>0?'+':'';td.append(element('small',sign+money(change.amount)+' · '+(change.percent===null?(v?'New spending':'No change'):(change.percent>0?'+':'')+change.percent.toFixed(1)+'%'),change.amount>0?'increase':change.amount<0?'decrease':''));}row.append(td)});row.append(element('td',money(values.reduce((s,n)=>s+n,0))));}
+ const body=element('tbody');for(const r of model.rows){const row=element('tr'),label=element('td'),open=element('button',r.label);open.title='Show matching records';open.onclick=()=>{const dimension=comparisonGroup==='category'?'categories':'items';reportScope[dimension]={mode:'include',keys:[r.key]};renderScope();page=0;render();showView('overview');$('records').scrollIntoView({block:'start'});};label.append(open);row.append(label);cells(row,r.values,r.counts);body.append(row)}table.append(body);
+ const foot=element('tfoot'),total=element('tr');total.append(element('td','Selected spending'));cells(total,model.totals,model.counts);foot.append(total);table.append(foot);wrap.append(table);parent.append(wrap);
+}
+function appendRecordTools(container,row){
+ const tools=element('div',undefined,'record-tools'),exclude=element('button','Exclude');exclude.title='Exclude this record from report totals';exclude.onclick=()=>{reportScope.excluded.push(comparisonModel.recordKey(row));renderScope();scopeChanged();};tools.append(exclude);
+ if(!live){const username=boot.botUsername;const edit=element(typeof username==='string'&&/^[a-zA-Z0-9_]+$/.test(username)?'a':'button','Edit in Telegram');if(edit.tagName==='A'){edit.href='https://t.me/'+username+'?start=edit_'+row.kind+'_'+row.id;edit.target='_blank';edit.rel='noopener noreferrer';}else edit.onclick=()=>openTelegramEdit(row);tools.append(edit);}
+ container.append(tools);
+}
+function openTelegramEdit(row){
+ let dialog=$('telegram-editor');if(!dialog){dialog=element('dialog');dialog.id='telegram-editor';document.body.append(dialog);}dialog.replaceChildren();
+ const title=element('h2','Edit in Telegram');title.id='telegram-editor-title';dialog.setAttribute('aria-labelledby',title.id);
+ const command=element('input');command.readOnly=true;command.value='/edit '+row.kind+' '+row.id;command.setAttribute('aria-label','Telegram edit command');command.style.width='100%';command.onclick=()=>command.select();
+ const close=element('button','Close');close.onclick=()=>dialog.close();
+ dialog.append(title,element('p',row.label+' · '+row.day+' · '+money(row.amountMinor)),element('p','Send this command to your FinTrack bot to review the saved entry and make corrections:'),command,element('p','After saving, export /dashboard again to refresh this snapshot. Channel entries update their original table; change their name or date in that table.','fineprint'),close);dialog.showModal();command.select();
+}
+</script>

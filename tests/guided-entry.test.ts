@@ -2,6 +2,41 @@ import { describe, expect, it } from 'vitest';
 import { fixture, day } from './bot-fixture';
 
 describe('guided Telegram entry',()=>{
+  it('opens dashboard edit links using current owned data and saves only after confirmation',async()=>{
+    const h=await fixture(),id=await h.db.addTransaction(1,null,100,'Coffee',day,1);
+    await h.command(`/start edit_expense_${id}`,2);expect(await h.db.getState(2)).toBeNull();
+    await h.command(`/start edit_expense_${id}`);
+    expect(await h.draft()).toMatchObject({step:'review',edit:{id,kind:'expense'},amount:10000});
+    expect((await h.db.transaction(1,id))!.amount).toBe(100);
+    await h.click('Edit amount');await h.command('175');await h.click('Save correction');
+    expect((await h.db.transaction(1,id))!.amount).toBe(175);
+    await h.command(`/edit expense ${id}`);expect((await h.draft()).amount).toBe(17500);
+    await h.click('Cancel draft');expect((await h.db.transaction(1,id))!.amount).toBe(175);
+    await h.command('/start edit_expense_999999');expect(await h.db.getState(1)).toBeNull();
+    expect(h.calls.at(-1)!.payload.text).toContain('no longer available');
+    await h.command('/start edit_expense_0');expect(await h.db.getState(1)).toBeNull();
+    expect(h.calls.at(-1)!.payload.text).toContain('invalid');
+    await h.command('/start');expect(h.calls.at(-1)!.payload.text).toContain('Hi');
+  });
+  it('opens income, savings and channel corrections from report commands',async()=>{
+    const h=await fixture(true);
+    await h.db.income.add(1,'Salary',10000,day,'salary',1);
+    const income=(await h.db.income.list(1,day,day))[0]!;
+    await h.command(`/start edit_income_${income.id}`);expect(await h.draft()).toMatchObject({kind:'income',step:'review',edit:{id:income.id}});
+    await h.click('Cancel draft');
+    await h.db.finance.putGoal(1,'Laptop',1000000,null,10000,0,null);
+    const goal=(await h.db.finance.goals(1))[0]!;
+    await h.db.finance.contribute(1,goal.id,1000,day,'deposit',1);
+    const saved=(await h.db.finance.savingsEntries(1,day,day))[0]!;
+    await h.command(`/edit saving ${saved.id}`);expect(await h.draft()).toMatchObject({kind:'saving',goalId:goal.id,step:'review'});
+    await h.click('Cancel draft');
+    await h.command(`/edit withdrawal ${saved.id}`);expect(await h.db.getState(1)).toBeNull();
+    await h.command('/add Coffee');await h.action('account:1');await h.command('100');await h.click('Categorize later');await h.click('Save entry');
+    const tx=(await h.db.recentTransactions(1,1))[0]!;
+    await h.command(`/start edit_expense_${tx.id}`);expect((await h.draft()).edit.channel).toBe(true);
+    await h.click('Edit amount');await h.command('125');await h.click('Save correction');
+    expect((await h.db.recentTransactions(1,1))[0]!.amount).toBe(125);
+  });
   it('selects a recent item, suggests its account, accepts keypad input and saves only after review',async()=>{
     const h=await fixture(),category=(await h.db.categories(1))[0]!;
     await h.db.addTransaction(1,category.id,20,'Coffee',day,2);

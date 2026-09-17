@@ -17,11 +17,12 @@ export function validateRange(from: string, to: string): void {
 export async function dashboardData(db: Db, user: number, tz: string, from: string, to: string) {
   validateRange(from,to);
   const today = todayIn(tz);
-  const [expenses,incomes,savings,categories,status,warnings,insights,accounts,workspace,transfers,goalHistory] = await Promise.all([
+  const [expenses,incomes,savings,categories,status,warnings,insights,accounts,workspace,transfers,goalHistory,accountHistory] = await Promise.all([
     db.transactionsBetween(user,from,to,10001),db.income.list(user,from,to),db.finance.savingsEntries(user,from,to),
     db.categories(user,true),financialStatus(db,user,today),db.finance.errors(user),dashboardInsights(db,user,today,to>today?today:to),db.accounts.list(user,today),db.workspace.data(db,user,from,to,today),
     db.transfers.list(user,from,to),
     db.finance.goalHistory(user,addDays(today,-89),today),
+    db.accounts.analytics(user,from,to,today),
   ]);
   if (expenses.length+incomes.length+savings.length+transfers.length>10000) throw new Error('More than 10,000 records. Choose a shorter date range.');
   const records: DashboardRecord[] = [
@@ -29,6 +30,6 @@ export async function dashboardData(db: Db, user: number, tz: string, from: stri
     ...incomes.map(r=>({id:r.id,kind:'income' as const,entryKey:r.source_chat==null?`income:${r.id}`:`channel:${r.source_chat}:${r.source_message}:income:${r.source.trim().toLowerCase()}`,accountId:r.account_id,passive:Boolean(r.passive),day:r.received_on,label:r.source,amountMinor:r.amount_minor,categoryId:null,category:r.source,channel:r.source_chat!==null})),
     ...savings.map(r=>({id:r.id,accountId:r.account_id,kind:r.amount_minor>0?'saving' as const:'withdrawal' as const,day:r.saved_on,label:r.goal_name,amountMinor:Math.abs(r.amount_minor),categoryId:null,category:r.goal_name,channel:r.source_chat!==null})),
   ].sort((a,b)=>b.day.localeCompare(a.day)||b.id-a.id);
-  return {from,to,today,insights,accounts,workspace,records,transfers,goalHistory,categories,status,warnings: warnings.map(w=>`Channel post #${w.message_id}: ${w.error}`)};
+  return {from,to,today,insights,accounts,workspace,records,transfers,goalHistory,accountHistory,categories,status,warnings: warnings.map(w=>`Channel post #${w.message_id}: ${w.error}`)};
 }
 export type DashboardData = Awaited<ReturnType<typeof dashboardData>>;

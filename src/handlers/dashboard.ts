@@ -10,8 +10,8 @@ export async function sendDashboard(ctx:AppContext, days = 90):Promise<void> {
   let data;
   try { data=await dashboardData(ctx.db,ctx.userId,ctx.tz,from,to); }
   catch(error) { await ctx.reply(error instanceof Error?error.message:'Could not generate that report. Try a shorter period.'); return; }
-  await ctx.api.sendDocument(ctx.chat!.id,new InputFile(new TextEncoder().encode(renderDashboard(data,false)),`fintrack-${to}.html`),{
-    caption:`Interactive HTML report · last ${days} days. Open in a browser to filter dates, categories and charts. This is a read-only snapshot. Use /add, /income or /new in Telegram to record activity.`,
+  await ctx.api.sendDocument(ctx.chat!.id,new InputFile(new TextEncoder().encode(renderDashboard(data,false,ctx.me.username)),`fintrack-${to}.html`),{
+    caption:`Interactive HTML report · last ${days} days. Include or exclude categories and items, compare months, or choose Edit in Telegram on a record. This is a read-only snapshot; export again after corrections.`,
   });
 }
 dashboard.command('dashboard',ctx=>sendDashboard(ctx));

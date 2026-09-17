@@ -182,15 +182,30 @@ export function correctionKeyboard(kind:EntryKind,id:number):InlineKeyboard {
 async function record(ctx:AppContext,kind:EntryKind,id:number){return ledgerEntry(ctx.db,ctx.env.DB,ctx.userId,kind,id);}
 guidedEntry.callbackQuery(/^correct:(expense|income|saving|withdrawal):(\d+):(amount|account|undo|review)$/,async ctx=>{
   await ctx.answerCallbackQuery();
-  const kind=ctx.match[1] as EntryKind,row=await record(ctx,kind,Number(ctx.match[2]));
-  if(!row){await ctx.reply('This entry is no longer available.',{reply_markup:new InlineKeyboard().text('Add an entry','entry:new')});return;}
+  await openCorrection(ctx,ctx.match[1] as EntryKind,Number(ctx.match[2]),ctx.match[3] as 'amount'|'account'|'undo'|'review');
+});
+/** Always reload the owner's current entry; exported reports never authorize a write. */
+async function openCorrection(ctx:AppContext,kind:EntryKind,id:number,step:'amount'|'account'|'undo'|'review'){
+  const row=Number.isSafeInteger(id)&&id>0?await record(ctx,kind,id):null;
+  if(!row){await ctx.reply('This entry is no longer available. Export /dashboard again or open /last, /incomes or /savings.',{reply_markup:new InlineKeyboard().text('Recent activity','entry:check')});return;}
   const expected={amountMinor:row.amount,day:row.day,label:row.label,accountId:row.accountId,passive:row.passive,categoryId:row.categoryId,goalId:row.goalId};
-  if(ctx.match[3]==='undo'){
+  if(step==='undo'){
     const request=crypto.randomUUID();
     await ctx.db.setState(ctx.userId,'guided_undo',{request,kind,id:row.id,expected,channel:row.sourceChat!=null});
     await ctx.reply(`Undo ${minorMoney(row.amount,ctx.sign)} ${row.label||titles[kind]}?`,{reply_markup:new InlineKeyboard().text('Undo entry',`undoentry:${request.replaceAll('-','')}`).text('Keep it',`keepentry:${request.replaceAll('-','')}`)});return;
   }
-  await show(ctx,{request:crypto.randomUUID(),kind,step:ctx.match[3] as Step,amount:row.amount,goalId:row.goalId,label:row.label||titles[kind],categoryId:row.categoryId,accountId:row.accountId,day:row.day,edit:{id:row.id,kind,expected,channel:row.sourceChat!=null}});
+  await show(ctx,{request:crypto.randomUUID(),kind,step,amount:row.amount,goalId:row.goalId,label:row.label||titles[kind],categoryId:row.categoryId,accountId:row.accountId,day:row.day,edit:{id:row.id,kind,expected,channel:row.sourceChat!=null}});
+}
+guidedEntry.command('start',async(ctx,next)=>{
+  if(!ctx.match.startsWith('edit_'))return next();
+  const match=/^edit_(expense|income|saving|withdrawal)_([1-9]\d*)$/.exec(ctx.match.trim());
+  if(!match){await ctx.reply('This edit link is invalid. Export a new /dashboard or open /last.');return;}
+  await openCorrection(ctx,match[1] as EntryKind,Number(match[2]),'review');
+});
+guidedEntry.command('edit',async ctx=>{
+  const match=/^(expense|income|saving|withdrawal)\s+([1-9]\d*)$/.exec(ctx.match.trim());
+  if(!match){await ctx.reply('Choose Edit in Telegram on a dashboard record, or use /edit expense 123 with its record ID. Use /last, /incomes or /savings to find recent entries.');return;}
+  await openCorrection(ctx,match[1] as EntryKind,Number(match[2]),'review');
 });
 export async function sendSavingsEntries(ctx:AppContext){
   const rows=(await ctx.db.finance.savingsEntries(ctx.userId,'0001-01-01',todayIn(ctx.tz))).slice(0,15),kb=new InlineKeyboard();

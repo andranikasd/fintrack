@@ -102,10 +102,12 @@ describe('dashboard data and actions',()=>{
     const cash=(await db.accounts.list(1,day)).find(a=>a.name==='Cash')!;
     await db.transfers.add(1,1,cash.id,100077,day,'ATM cash withdrawal','transfer',day);
     await db.income.add(1,'</script><script>alert(1)</script>',100,day,'xss',1);
+    await db.income.add(1,'__FINTRACK_GOAL_MODEL__',100,day,'template-token',1);
     const data=await dashboardData(db,1,'Asia/Yerevan',from,day),html=renderDashboard(data,false);
     expect(html).not.toContain('</script><script>alert(1)</script>');
     const bootstrap=html.match(/id="bootstrap">([\s\S]*?)<\/script>/)![1]!;
     expect(JSON.parse(bootstrap).live).toBe(false);
+    expect(JSON.parse(bootstrap).data.records.some((r:{label:string})=>r.label==='__FINTRACK_GOAL_MODEL__')).toBe(true);
     const script=html.match(/<script>\s*([\s\S]*?)<\/script>/)![1]!;
     expect(()=>new Script(script)).not.toThrow();
     if(process.env.WRITE_DASHBOARD_HTML)writeFileSync(process.env.WRITE_DASHBOARD_HTML,html);

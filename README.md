@@ -29,7 +29,8 @@ See [VPS setup, updates and recovery](docs/vps.md) for the production guide.
 - **Native Telegram tables** for account balances, expense confirmations, daily and
   monthly summaries, recent expenses, income, goals and statistics.
 - **Dashboard** with grouped navigation, account balances, mobile section selection,
-  searchable activity and expandable spending insights.
+  searchable activity, category and item inclusion/exclusion, monthly comparisons,
+  Telegram editing links and expandable spending insights.
 
 ## Talking to the bot
 
@@ -428,3 +429,64 @@ Use **Print / save PDF** while viewing the planner to export the selected goal,
 charts, scenario assumptions and suggestions. Your scenario and selected goal
 remain selected afterward. Changes to real plans still happen through `/goal`
 in Telegram. Everything works offline without external chart or font downloads.
+
+### Comparing months and correcting entries
+
+Open **Compare months** in an exported dashboard. Choose **Category** or **Item
+name**, then select the months to compare. The chart shows the six largest groups;
+the table includes every matching group, exact monthly totals, entry counts, and
+amount/percentage changes against the preceding selected month. Empty months
+remain visible. Partial months show their covered dates; **Same days in each
+month** compares only the calendar days covered in every selected month.
+
+Expand **Include or exclude categories, items, and individual records** to search
+and select multiple categories or item names. **Include only selected** starts
+with no matches until you select something. **Exclude selected** keeps everything
+else. Category and item choices apply together. Item names match exactly after
+trimming and ignoring case. The overview, comparisons, record list and CSV export
+use the same filters. **Exclude** on a record removes only that entry from the
+report; **Restore excluded records** or **Clear filters** brings it back. These
+choices are local to the open report and do not delete or change saved entries.
+
+Comparisons use the report's exported records and selected dates, independently of
+the longer aggregate history in account reports. Use **Use full snapshot** to
+restore all exported dates, or `/chart 366` for up to a year of item history.
+
+Choose **Edit in Telegram** on a record to review its current saved details. When
+a report has no bot link, it shows a command such as `/edit expense 123` to send
+in your private bot chat. Manual entries support amount, account, date, and
+name/category or goal corrections. Channel entries support amount/account
+corrections through the bot; edit their name or date in the source table.
+Corrections require **Save correction** and retain ownership, conflict and
+balance checks. Export a new `/dashboard` after saving to see updated figures.
+
+### Month-end review and account trends
+
+The exported dashboard includes **Month-end review** and **Account trends**.
+Choose a month and account to see income, spending, passive income, net savings,
+daily balances, monthly balance trends, income sources, category shares, and a
+complete account reconciliation. The report includes at least twelve months of
+aggregates through the export's ending month, plus the preceding comparison
+month; these aggregates do not depend on the selected ledger rows. Current funds
+are labeled separately from historical closing funds. Transfers and account
+opening funds never count as income. Entries before an account's opening date
+or without an owned account are flagged and excluded from account totals.
+
+An unfinished month compares income and spending with the same elapsed days of
+the previous month. Spending pace offers cumulative and daily views, prior-month
+spending, and a clearly labeled estimate based on the recorded daily average.
+The current monthly budget is shown only for the current month across all
+accounts; historical budget settings are not inferred.
+
+Time-series panels support hover/tap inspection, clickable legends, drag-to-zoom,
+zoom buttons, a fitted vertical axis, expansion, keyboard navigation, and exact
+data tables. Overview and goal charts also have zoom/expansion controls; their
+existing record drill-downs and local goal scenarios remain available. Chart
+interactions change only the local report. New transactions still belong in
+Telegram, and obtaining newer data requires exporting a fresh snapshot.
+
+Use **Print / save PDF** from the month-end or account view to export that month
+and account scope, including charts and reconciliation. Verification fixtures:
+`WRITE_ANALYTICS_HTML=/tmp/fintrack-analytics.html npx vitest run tests/account-analytics.test.ts`,
+then `node scripts/test-analytics-browser.mjs` for desktop/mobile interaction
+checks and a sample PDF. All fixture data is synthetic.

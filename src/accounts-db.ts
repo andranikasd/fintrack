@@ -1,10 +1,12 @@
 import type { Database } from './database';
+import { accountAnalytics } from './account-analytics';
 export interface Account {
   id:number;user_id:number;name:string;opening_minor:number;opening_on:string;
   passive_income:number;archived:number;version:number;balance_minor:number;
 }
 export class AccountsDb {
   constructor(private readonly db:Database) {}
+  analytics(user:number,from:string,to:string,today:string) { return accountAnalytics(this.db,user,from,to,today); }
   async list(user:number,today:string):Promise<Account[]> {
     return (await this.db.prepare(`SELECT a.*,COALESCE((SELECT balance_minor FROM account_daily_balances b WHERE b.account_id=a.id AND b.day<=? ORDER BY b.day DESC LIMIT 1),a.opening_minor) AS balance_minor
       FROM accounts a WHERE a.user_id=? ORDER BY a.archived,lower(a.name)`).bind(today,user).all<Account>()).results;

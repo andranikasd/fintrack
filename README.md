@@ -475,6 +475,21 @@ corrections.
 
 ### Month-end review and account trends
 
+Phone and tablet layouts include sticky section navigation, touch targets of at
+least 44 pixels, readable transaction cards, and account reconciliation cards.
+Wide comparison tables scroll within their own region and keep the first column
+visible. Tap a chart to inspect values and use its zoom buttons; vertical swipes
+still scroll the report. Rotating the device resizes account and month-end
+charts while preserving their selected range and visible series. Print/PDF keeps the report tables.
+
+The mobile browser check uses Chromium phone/tablet and touch emulation at
+320, 390, 430, 768, and 844 pixels, including orientation changes:
+`node scripts/test-mobile-dashboard-browser.mjs`.
+Generate the synthetic fixtures with the `WRITE_DASHBOARD_HTML`,
+`WRITE_ANALYTICS_HTML`, `WRITE_PLANNER_HTML`, and `WRITE_COMPARISON_HTML`
+environment variables before running browser checks. This does not replace
+testing on physical iOS/Android devices.
+
 The exported dashboard includes **Month-end review** and **Account trends**.
 Choose a month and account to see income, spending, passive income, net savings,
 daily balances, monthly balance trends, income sources, category shares, and a

@@ -336,7 +336,7 @@ export async function sendRecent(ctx:AppContext,limit=10):Promise<void>{
     kb.text(`Edit ${tx.note||tx.category_name||'expense'} · ${money(tx.amount,ctx.sign)}`.slice(0,60),`correct:expense:${tx.id}:review`);
     if ((i + 1) % 2 === 0) kb.row();
   });
-  kb.row().text('Income receipts','income:recent').text('Savings activity','savings:recent').row().text('Transfers','transfers:list').text('Add expense','new:expense');
+  kb.row().text('Find older entries','history:open:expense').row().text('Income receipts','income:recent').text('Savings activity','savings:recent').row().text('Transfers','transfers:list').text('Add expense','new:expense');
   await ctx.api.sendRichMessage(ctx.chat!.id,{blocks:[
     {type:'heading',size:2,text:`Last ${rows.length} expenses`},
     reportTable(['Date','Item / category','Amount'],rows.map(tx=>[

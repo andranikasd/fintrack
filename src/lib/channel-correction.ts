@@ -4,7 +4,7 @@ import { handleChannelPost } from '../handlers/channel';
 import { ledgerEntry, matchesEntry, type EntryKind } from './ledger-entry';
 
 /** Telegram is the source of imported entries. Preserve its formatting, then import the returned revision. */
-export async function correctChannelEntry(ctx:AppContext,kind:EntryKind,id:number,expected:Record<string,unknown>,next:{amount:number;accountId:number}|null,request:string):Promise<number|null>{
+export async function correctChannelEntry(ctx:AppContext,kind:EntryKind,id:number,expected:Record<string,unknown>,next:{amount:number;accountId:number;label?:string;categoryId?:number|null}|null,request:string):Promise<number|null>{
   const row=await ledgerEntry(ctx.db,ctx.env.DB,ctx.userId,kind,id);
   if(!row||row.sourceChat===null||row.sourceMessage===null||!matchesEntry(row,expected))throw new Error('This entry changed. Reopen the latest entry.');
   const post=await ctx.env.DB.prepare('SELECT content,error FROM channel_posts WHERE user_id=? AND chat_id=? AND message_id=?').bind(ctx.userId,row.sourceChat,row.sourceMessage).first<{content:string|null;error:string|null}>();
@@ -14,13 +14,24 @@ export async function correctChannelEntry(ctx:AppContext,kind:EntryKind,id:numbe
   const rows=await siblings(),index=rows.findIndex(r=>r.id===id);
   const account=next?await ctx.db.accounts.get(ctx.userId,next.accountId):null;
   if(next&&(!account||account.archived))throw new Error('Choose an active account.');
+  if(next?.label!==undefined&&(kind==='saving'||kind==='withdrawal'||!next.label.trim()||next.label.length>120))throw new Error('Choose an item or source name of 1–120 characters.');
+  const categoryId=next?.categoryId===undefined?row.categoryId:next.categoryId;
+  if(next&&kind==='expense'&&categoryId!==null&&categoryId!==row.categoryId){const category=await ctx.db.category(ctx.userId,categoryId);if(!category||category.archived)throw new Error('Choose an active category.');}
+  // Categories are local metadata, so category-only edits must not submit unchanged text to Telegram.
+  if(next&&next.amount===row.amount&&next.accountId===row.accountId&&(next.label??row.label)===row.label){
+    if(kind==='expense'){
+      await ctx.db.setTransactionCategory(ctx.userId,row.id,categoryId);
+      if(categoryId!==null)await ctx.db.finance.alias(ctx.userId,row.label,categoryId);
+    }
+    return row.id;
+  }
   const direction=kind==='income'||kind==='withdrawal'?1:-1;
   const changes=new Map<number,number>([[row.accountId,-row.amount*direction]]);
   if(next)changes.set(next.accountId,(changes.get(next.accountId)??0)+next.amount*direction);
   for(const [accountId,change]of changes)if(change<0)await ctx.db.accounts.assertCanSpend(ctx.userId,accountId,-change,row.day);
   if(row.goalId){const goal=(await ctx.db.finance.goals(ctx.userId)).find(g=>g.id===row.goalId);if(!goal||goal.saved_minor+(kind==='saving'?1:-1)*((next?.amount??0)-row.amount)<0)throw new Error('This change exceeds the saved balance in the goal.');}
   const prefix=kind==='expense'?'':kind==='income'?'income:':kind==='saving'?'save:':'withdraw:';
-  const label=next?`${prefix}${row.label} @ ${account!.name}${row.passive?' [passive]':''}`:'';
+  const label=next?`${prefix}${next.label??row.label} @ ${account!.name}${row.passive?' [passive]':''}`:'';
   const edited=changeChannelEntry(JSON.parse(post.content),ctx.tz,kind==='saving'?'save':kind==='withdrawal'?'withdraw':kind,index,next?{label,amount:next.amount/100}:null);
   const event=`correction:${ctx.userId}:${request}`;
   await ctx.env.DB.prepare("UPDATE channel_add_requests SET status='uncertain' WHERE chat_id=? AND status='pending' AND started_at<unixepoch()-600").bind(row.sourceChat).run();
@@ -36,7 +47,12 @@ export async function correctChannelEntry(ctx:AppContext,kind:EntryKind,id:numbe
     await handleChannelPost(ctx,ctx.db,new Set([ctx.userId]),ctx.sign,message);
     const status=await ctx.db.finance.post(row.sourceChat,row.sourceMessage);
     if(!status||status.error)throw new Error('The channel changed but needs synchronization. Check /syncstatus before retrying.');
-    completed=true;return next?(await siblings())[index]?.id??null:null;
+    const savedId=next?(await siblings())[index]?.id??null:null;
+    if(savedId&&kind==='expense'){
+      await ctx.db.setTransactionCategory(ctx.userId,savedId,categoryId);
+      if(categoryId!==null)await ctx.db.finance.alias(ctx.userId,next!.label??row.label,categoryId);
+    }
+    completed=true;return savedId;
   }catch(error){throw new Error('Channel update could not be confirmed. Check the channel and /syncstatus before retrying.',{cause:error});}
   finally{await ctx.env.DB.prepare('UPDATE channel_add_requests SET status=? WHERE event_key=?').bind(completed?'done':'uncertain',event).run();}
 }

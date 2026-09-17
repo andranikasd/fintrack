@@ -58,7 +58,7 @@ export async function sendIncomeSummary(ctx:AppContext):Promise<void>{
   ]);
   const keyboard = new InlineKeyboard();
   for (const row of rows) keyboard.text(`Edit ${row.source.slice(0,30)} ${minorMoney(row.amount_minor,ctx.sign)}`,`correct:income:${row.id}:review`).row();
-  keyboard.row().text('Recent expenses','expense:recent').text('Add income','new:income');
+  keyboard.row().text('Find older entries','history:open:income').row().text('Recent expenses','expense:recent').text('Add income','new:income');
   await ctx.api.sendRichMessage(ctx.chat!.id,{blocks:[
     {type:'heading',size:2,text:`Income · ${monthOf(today)}`},
     {type:'paragraph',text:{type:'bold',text:`Received: ${minorMoney(total,ctx.sign)}`}},

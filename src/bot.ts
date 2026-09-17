@@ -1,3 +1,4 @@
+import { entryHistory } from './handlers/entry-history';
 import { financeForms } from './handlers/finance-forms';
 import { drafts } from './handlers/drafts';
 import { bills } from './handlers/bills';
@@ -26,6 +27,8 @@ import { stats } from './handlers/stats';
 import type { Env } from './types';
 
 export const COMMANDS = [
+  {command:'edit',description:'Find and edit any past entry'},
+  {command:'history',description:'Search all recorded entries by item or date'},
   {command:'resume',description:'Continue an unfinished entry or setup'},
   {command:'drafts',description:'View and discard unfinished drafts'},
   {command:'transfer',description:'Record a transfer between your accounts'},
@@ -115,7 +118,7 @@ export function createBot(env: Env, exec: BackgroundWork): Bot<AppContext> {
   bot.use(async(ctx,next)=>{
     const text=ctx.message?.text,callback=ctx.callbackQuery?.data;
     const menu=['➕ Expense','💰 Income','➕ Add entry','🧾 Recent','🏦 Accounts','📄 Export','🗂 Categories','🎯 Budget','📊 Month','📈 Stats','↩️ Undo'];
-    const navigating=Boolean(text&&(text.startsWith('/')||menu.includes(text))||callback&&/^(new:|entry:new$|setup:|correct:|income:recent$|expense:recent$|bills:list$|transfers:list$|savings:recent$|transfer:undo:|drafts:list$|saving:(?:yes|other|skip):|cats:|cat:|bud:|review:new:)/.test(callback));
+    const navigating=Boolean(text&&(text.startsWith('/')||menu.includes(text))||callback&&/^(history:open|new:|entry:new$|setup:|correct:|income:recent$|expense:recent$|bills:list$|transfers:list$|savings:recent$|transfer:undo:|drafts:list$|saving:(?:yes|other|skip):|cats:|cat:|bud:|review:new:)/.test(callback));
     if(navigating){
       const cancelled=Boolean(text&&/^\/cancel(?:@\w+)?(?:\s|$)/.test(text));
       const paused=cancelled?null:await ctx.db.pauseDraft(ctx.userId);
@@ -130,6 +133,7 @@ export function createBot(env: Env, exec: BackgroundWork): Bot<AppContext> {
   bot.use(financeForms);
   bot.use(bills);
   bot.use(transfers);
+  bot.use(entryHistory);
   bot.use(guidedEntry);
   bot.use(channelCommands);
   bot.use(goals);

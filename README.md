@@ -455,10 +455,23 @@ restore all exported dates, or `/chart 366` for up to a year of item history.
 Choose **Edit in Telegram** on a record to review its current saved details. When
 a report has no bot link, it shows a command such as `/edit expense 123` to send
 in your private bot chat. Manual entries support amount, account, date, and
-name/category or goal corrections. Channel entries support amount/account
-corrections through the bot; edit their name or date in the source table.
+name/category or goal corrections. Channel expenses and income also support
+name corrections through the bot; channel expenses support category changes,
+which are remembered for the item name. A channel entry's date belongs to its
+whole daily table and must be changed in that source post. Channel savings goal
+changes also require editing the source row.
 Corrections require **Save correction** and retain ownership, conflict and
 balance checks. Export a new `/dashboard` after saving to see updated figures.
+
+Use `/edit` or `/history` without a record ID to browse all recorded expenses,
+income, savings deposits and withdrawals. **Older** and **Newer** page through
+the complete ledger with no date cutoff. Search directly with `/edit coffee`,
+`/edit 2025-06`, or `/edit 2025-06-15`, or tap **Search item or date**. Type filters
+help narrow the results. Every saved-entry confirmation has **Edit entry** and
+**Find older entries** buttons. Old channel links can expire when their source
+post is reimported; the history picker finds the current entries. Deleted records
+cannot be reopened, and archived accounts must be reactivated to use them in
+corrections.
 
 ### Month-end review and account trends
 

@@ -58,7 +58,9 @@ Create an account from a channel table with <code>account:Card | 100000</code>; 
 <b>Commands</b>
 /month — this month, by category
 /stats — last 6 months + top categories
-/last — recent expenses, with delete buttons
+/edit — find and edit any entry; search by item name or YYYY-MM
+/history — browse all recorded expenses, income and savings
+/last — recent expenses, with edit and undo buttons
 /cats — add, rename, archive, delete categories
 /budget — monthly limit, overall or per category
 /export — PDF report with charts, or CSV
